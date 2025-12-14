@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: CTF Challenge Instancer
+  version: 1.2.0
+  description: API for deploying CTF challenges.
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+# For reference only. Commented since oapi-codegen would overwrite the handler we expose ourselves
+#  /metrics:
+#    get:
+#      summary: Prometheus metrics
+#      operationId: getMetrics
+#      security: []
+#      responses:
+#        '200':
+#          description: Prometheus metrics
+#          content:
+#            text/plain:
+#              schema:
+#                type: string
+
+  /deploy:
+    post:
+      summary: Deploy a challenge instance
+      operationId: deployInstance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployRequest'
+      responses:
+        '202':
+          description: Deployment request accepted
+        '400':
+          description: Invalid Request / Unknown Challenge ID
+        '401':
+          description: Unauthorized
+        '409':
+          description: Deployment already in progress/complete
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /terminate:
+    post:
+      summary: Terminate a challenge instance
+      operationId: terminateInstance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployRequest'
+      responses:
+        '200':
+          description: Termination successful
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /status:
+    get:
+      summary: Get deployment status
+      operationId: getInstanceStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    DeployRequest:
+      type: object
+      required:
+        - challenge_name
+      properties:
+        challenge_name:
+          type: string
+          description: The name of the challenge to deploy.
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [running, stopping, starting, error]
+        connection_info:
+          type: string
+        uptime:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string

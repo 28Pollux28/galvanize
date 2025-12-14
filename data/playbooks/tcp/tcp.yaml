@@ -1,0 +1,28 @@
+---
+- hosts: all
+  gather_facts: false
+  vars:
+    compose_definition:
+      services:
+        tcp:
+          image: "{{ image }}"
+          network_mode: bridge
+          ports: "{{ published_ports }}"
+          restart: unless-stopped
+      networks:
+        traefik:
+          external: true
+  tasks:
+    - name: Déploiement du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        pull: always
+      tags: create
+
+    - name: Arrêt et suppression du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        state: absent
+      tags: delete

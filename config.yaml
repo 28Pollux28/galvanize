@@ -1,0 +1,9 @@
+auth:
+  jwt_secret: "super-secret-key"
+
+deployer:
+  ansible_dir: "./data/playbooks"
+  challenge_dir: "./data/challenges"
+  deployer_host: "ca.lemaires.fr"
+
+    

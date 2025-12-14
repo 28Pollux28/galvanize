@@ -1,0 +1,38 @@
+name: JKT Check-In Kiosk
+author: RobInTheHood
+category: PWN
+
+type: ansible
+
+#image: nginx:latest
+playbook_name: tcp
+deploy_parameters:
+  challenge_name: tcp
+  published_ports: [1337]
+  image: nginx:latest
+
+# https://res260.github.io/cfss/
+# CFSS:0.3/TS:I/E:M/HSFC:Y=7-12
+value: 7
+
+description: |-
+  ## Description (français)
+
+  Une borne d’auto-enregistrement à Jakarta gère carte d’embarquement, surclassement et étiquettes bagages.
+  Explorez ses options, faites-la parler… et obtenez votre surclassement. Bon vol ! ✈️
+
+  ## Description (english)
+
+  An airport self-check-in kiosk in Jakarta handles boarding passes, upgrades, and baggage tags.
+  Explore its options, make it talk… and secure your upgrade. Safe travels! ✈️
+
+flags:
+  - flag-wu92phofpc78upd9
+
+files:
+  - public/src.zip
+
+tags:
+  - A:RobInTheHood
+  - V:Indonésie, Jakarta
+  - CFSS:0.3/TS:I/E:M/HSFC:Y=7-12

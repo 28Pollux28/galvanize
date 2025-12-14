@@ -1,0 +1,17 @@
+name: polypwn-instancer
+services:
+  instancer:
+    build: .
+    ports:
+      - "8080:8080"
+    entrypoint:
+        - "./instancer"
+        - "serve"
+        - "8080"
+        - "--config"
+        - "config.yaml"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data/db:/app/data/db
+
+    restart: unless-stopped
