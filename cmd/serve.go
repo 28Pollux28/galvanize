@@ -14,11 +14,8 @@ import (
 	echojwt "github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
-
-var configFile string
 
 var serveCmd = &cobra.Command{
 	Use:   "serve [port]",
@@ -32,14 +29,6 @@ var serveCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		e := echo.New()
-
-		// 1. Setup Docker Client
-		// This will look for standard Docker socket or ENV vars
-		dockerCli, err := client.New(client.FromEnv, client.WithAPIVersionNegotiation())
-		if err != nil {
-			log.Fatalf("Failed to create Docker client: %v", err)
-		}
-		defer dockerCli.Close()
 
 		// 2. Middleware
 		e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
@@ -86,7 +75,7 @@ var serveCmd = &cobra.Command{
 		e.Use(echojwt.WithConfig(jwtConfig))
 
 		// 6. Server Init (Includes Metric Rehydration)
-		srv := server.NewServer("data/test.sqlite")
+		srv := server.NewServer(cfg.Deployer.DBPath)
 		api.RegisterHandlers(e, srv)
 
 		e.Logger.Fatal(e.Start(":" + portStr))

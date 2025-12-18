@@ -9,9 +9,8 @@ services:
         - "serve"
         - "8080"
         - "--config"
-        - "config.yaml"
+        - "data/config.yaml"
     volumes:
-      - ./config.yaml:/app/config.yaml
-      - ./data/db:/app/data/db
+      - ./data/:/app/data/:Z
 
     restart: unless-stopped

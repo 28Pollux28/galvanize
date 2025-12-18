@@ -8,8 +8,9 @@ RUN go build -o instancer .
 FROM debian:stable-slim
 LABEL authors="28Pollux28"
 WORKDIR /app
+RUN mkdir "data"
 COPY --from=builder /app/instancer .
-COPY --from=builder /app/config.yaml .
+COPY --from=builder /app/config.yaml ./data
 EXPOSE 8080
 
-CMD ["./main serve 8080 -c config.yaml"]
+CMD ["./instancer serve 8080 -c config.yaml"]

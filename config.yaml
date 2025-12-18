@@ -5,5 +5,8 @@ deployer:
   ansible_dir: "./data/playbooks"
   challenge_dir: "./data/challenges"
   deployer_host: "ca.lemaires.fr"
-
-    
+  db_path: "./data/deployer.sqlite"
+  ansible:
+    inventory: "1.2.3.4,"
+    private_key: "/home/user/.ssh/ansible"
+    user: "user"

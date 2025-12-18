@@ -66,7 +66,6 @@ func initConfig() {
 }
 
 func handleConfigChange(filename string) {
-	log.Printf("Config file changed: %s\n", filename)
 	reloadMu.Lock()
 	defer reloadMu.Unlock()
 
@@ -74,6 +73,7 @@ func handleConfigChange(filename string) {
 		return // ignore duplicate events
 	}
 	lastReload = time.Now()
+	log.Printf("Config file %s changed\n", filename)
 
 	if err := config.Reload(); err != nil {
 		log.Printf("Error reloading config: %v", err)

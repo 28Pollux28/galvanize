@@ -17,9 +17,17 @@ type AuthConfig struct {
 }
 
 type DeployerConfig struct {
-	AnsibleDir   string `mapstructure:"ansible_dir"`   // Directory where Ansible playbooks are located
-	ChallengeDir string `mapstructure:"challenge_dir"` // Directory where challenge playbooks are stored
-	DeployerHost string `mapstructure:"deployer_host"` // IP or Hostname of the node where challenges will be deployed
+	Ansible      AnsibleConfig `mapstructure:"ansible"`       // Ansible specific configuration
+	AnsibleDir   string        `mapstructure:"ansible_dir"`   // Directory where Ansible playbooks are located
+	ChallengeDir string        `mapstructure:"challenge_dir"` // Directory where challenge playbooks are stored
+	DeployerHost string        `mapstructure:"deployer_host"` // IP or Hostname of the node where challenges will be deployed
+	DBPath       string        `mapstructure:"db_path"`
+}
+
+type AnsibleConfig struct {
+	Inventory  string `mapstructure:"inventory"`   // List of hosts or path to inventory file, e.g., "deployer_host,1.2.3.4,"
+	PrivateKey string `mapstructure:"private_key"` // Path to the private key for SSH access
+	User       string `mapstructure:"user"`        // SSH user
 }
 
 var (

@@ -161,13 +161,12 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		return ctx.JSON(500, api.Error{Message: utils.Ptr("Failed to create deployment record")})
 	}
 
-	projectName := "polypwn_" + req.ChallengeName + "_" + claims.TeamID
+	projectName := "polypwn-" + req.ChallengeName + "-" + claims.TeamID
 	sum := sha1.New().Sum([]byte(projectName))
 	hexSum := hex.EncodeToString(sum)
-	projectName = projectName + "_" + hexSum[:6]
+	projectName = projectName + "-" + hexSum[:6]
 
 	// Ansible Deploy
-	// TODO: Use inventory from file
 	playbookOpts := &playbook.AnsiblePlaybookOptions{
 		ExtraVars: map[string]interface{}{
 			"ansible_python_interpreter": "/usr/bin/python3",
@@ -175,10 +174,10 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 			"team_id":                    claims.TeamID,
 			"challenge_name":             req.ChallengeName,
 		},
-		Inventory:   "151.145.32.232,",
+		Inventory:   conf.Deployer.Ansible.Inventory,
 		Connection:  "ssh",
-		PrivateKey:  "/home/vlemaire/.ssh/ansible",
-		User:        "ansible",
+		PrivateKey:  conf.Deployer.Ansible.PrivateKey,
+		User:        conf.Deployer.Ansible.User,
 		VerboseVVVV: true,
 		Tags:        "create",
 	}
@@ -391,7 +390,6 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 	projectName = projectName + "_" + hexSum[:6]
 
 	// Ansible Deploy
-	// TODO: Use inventory from file
 	playbookOpts := &playbook.AnsiblePlaybookOptions{
 		ExtraVars: map[string]interface{}{
 			"ansible_python_interpreter": "/usr/bin/python3",
@@ -399,10 +397,10 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 			"team_id":                    claims.TeamID,
 			"challenge_name":             req.ChallengeName,
 		},
-		Inventory:   "151.145.32.232,",
+		Inventory:   conf.Deployer.Ansible.Inventory,
 		Connection:  "ssh",
-		PrivateKey:  "/home/vlemaire/.ssh/ansible",
-		User:        "ansible",
+		PrivateKey:  conf.Deployer.Ansible.PrivateKey,
+		User:        conf.Deployer.Ansible.User,
 		VerboseVVVV: true,
 		Tags:        "delete",
 	}
