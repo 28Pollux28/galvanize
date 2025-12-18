@@ -1,4 +1,5 @@
 .vscode/
 .idea/
 *.sqlite
-data/
+data/*
+!data/playbooks/
