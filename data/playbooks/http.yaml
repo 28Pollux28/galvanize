@@ -1,0 +1,38 @@
+---
+- hosts: all
+  gather_facts: false
+  vars:
+    domain_name: "{{ compose_project }}.challs.polycyber.io"
+    compose_definition:
+      services:
+        web:
+          image: "{{ image }}"
+          environment:
+            - "ANSIBLE_DEPLOY_DOMAIN_NAME={{ domain_name }}"
+          labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.site_{{ compose_project }}.rule=Host(`{{ domain_name }}`)"
+          networks:
+            - traefik
+          restart: unless-stopped
+      networks:
+        traefik:
+          external: true
+  tasks:
+    - name: Déploiement du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        pull: always
+      tags: create
+
+    - name: Arrêt des conteneurs
+      ansible.builtin.command: "docker compose -p {{ compose_project }} kill"
+      tags: delete
+
+    - name: Arrêt et suppression du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        state: absent
+      tags: delete

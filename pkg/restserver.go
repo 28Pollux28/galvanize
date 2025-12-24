@@ -161,16 +161,21 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		return ctx.JSON(500, api.Error{Message: utils.Ptr("Failed to create deployment record")})
 	}
 
-	projectName := "polypwn-" + req.ChallengeName + "-" + claims.TeamID
-	sum := sha1.New().Sum([]byte(projectName))
-	hexSum := hex.EncodeToString(sum)
-	projectName = projectName + "-" + hexSum[:6]
+	var composeProject string
+	if unique, ok := params["unique"].(bool); ok && unique == true {
+		composeProject = "global-" + req.ChallengeName
+	} else {
+		composeProject = "polypwn-" + req.ChallengeName + "-" + claims.TeamID
+		sum := sha1.New().Sum([]byte(composeProject))
+		hexSum := hex.EncodeToString(sum)
+		composeProject = composeProject + "-" + hexSum[:6]
+	}
 
 	// Ansible Deploy
 	playbookOpts := &playbook.AnsiblePlaybookOptions{
 		ExtraVars: map[string]interface{}{
 			"ansible_python_interpreter": "/usr/bin/python3",
-			"compose_project":            projectName,
+			"compose_project":            composeProject,
 			"team_id":                    claims.TeamID,
 			"challenge_name":             req.ChallengeName,
 		},
@@ -185,7 +190,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	maps.Copy(playbookOpts.ExtraVars, params)
 
 	pbCmd := playbook.NewAnsiblePlaybookCmd(
-		playbook.WithPlaybooks(path.Join(conf.Deployer.AnsibleDir, req.ChallengeName, challenge.PlaybookName+".yaml")),
+		playbook.WithPlaybooks(path.Join(conf.Deployer.AnsibleDir, challenge.PlaybookName+".yaml")),
 		playbook.WithPlaybookOptions(playbookOpts),
 	)
 
