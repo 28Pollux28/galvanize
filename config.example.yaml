@@ -1,0 +1,18 @@
+auth:
+  jwt_secret: "your-secret-key-here"
+
+instancer:
+  ansible_dir: "./data/playbooks" # Directory for Ansible playbooks
+  challenge_dir: "./data/challenges" # Directory for challenge files
+  instancer_host: "challs.example.com" # Public hostname of the deployer (will be used in domain names)
+  db_path: "./data/deployer.sqlite" # Path to SQLite database
+  deployment_ttl: "1h" # Time-to-live for deployments (default: 1h)
+  deployment_ttl_extension: "30m" # Time to extend deployment TTL with on extension request (default: 30m)
+  deployment_extension_window: "30m" # Time window to extend deployments before expiration (default: 30m)
+  deployment_max_extensions: 3 # Maximum number of extensions allowed per deployment (-1 for unlimited) (default: 3)
+  ansible:
+    inventory: "your-server-ip," # Comma at the end for single host. Use IP or hostname of the target hosts
+    private_key: "/home/galvanize/.ssh/ansible-ssh" # Path to SSH private key (replace this if you edit it in the docker compose)
+    user: "your-ssh-user" # SSH user for Ansible connections
+  extra_deployment_parameters: # Additional parameters for deployment (added to vars in Ansible)
+    example_param: "example_value"

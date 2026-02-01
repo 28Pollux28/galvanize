@@ -1,16 +1,29 @@
-name: polypwn-instancer
+name: Galvanize Instancer
 services:
   instancer:
-    build: .
+    build:
+      context: .
+      dockerfile: galvanize-instancer/Dockerfile
+    container_name: galvanize-instancer
+    stop_grace_period: 1m
+    stop_signal: SIGINT
     ports:
       - "8080:8080"
+    environment:
+      - "DEVELOPMENT=false"
     entrypoint:
-        - "./instancer"
+        - "./galvanize"
         - "serve"
         - "8080"
         - "--config"
         - "data/config.yaml"
     volumes:
       - ./data/:/app/data/:Z
-
+      - ./config.yaml:/app/data/config.yaml:Z
+      - /path/to/your/ssh/key:/home/galvanize/.ssh/ansible-ssh:Z,ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped

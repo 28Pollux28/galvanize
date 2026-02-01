@@ -2,23 +2,32 @@
 - hosts: all
   gather_facts: false
   vars:
-    domain_name: "{{ compose_project }}.challs.polycyber.io"
-    compose_definition:
-      services:
-        web:
-          image: "{{ image }}"
-          environment:
-            - "ANSIBLE_DEPLOY_DOMAIN_NAME={{ domain_name }}"
-          labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.site_{{ compose_project }}.rule=Host(`{{ domain_name }}`)"
-          networks:
-            - traefik
-          restart: unless-stopped
-      networks:
-        traefik:
-          external: true
+    domain_name: "{{ compose_project }}.{{ domain_root }}"
   tasks:
+    - name: Build compose definition
+      ansible.builtin.set_fact:
+        compose_definition:
+          services:
+            web:
+              image: "{{ image }}"
+              environment: >-
+                {{
+                  {
+                    'ANSIBLE_DEPLOY_DOMAIN_NAME': domain_name
+                  }
+                  | combine(env | default({}))
+                }}
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.site_{{ compose_project }}.rule=Host(`{{ domain_name }}`)"
+              networks:
+                - "{{ traefik_network }}"
+              restart: unless-stopped
+          networks: "{{ {traefik_network: {'external': true}} }}"
+      tags:
+        - create
+        - delete
+
     - name: Déploiement du docker-compose
       community.docker.docker_compose_v2:
         definition: "{{ compose_definition }}"

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/labstack/echo/v4"
@@ -30,6 +31,9 @@ const (
 
 // DeployRequest defines model for DeployRequest.
 type DeployRequest struct {
+	// Category The category of the challenge to deploy.
+	Category string `json:"category"`
+
 	// ChallengeName The name of the challenge to deploy.
 	ChallengeName string `json:"challenge_name"`
 }
@@ -41,9 +45,15 @@ type Error struct {
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
-	ConnectionInfo *string               `json:"connection_info,omitempty"`
+	ConnectionInfo *string    `json:"connection_info,omitempty"`
+	ExpirationTime *time.Time `json:"expiration_time,omitempty"`
+
+	// ExtensionTime Time duration each extension adds (e.g., "30m", "1h").
+	ExtensionTime *string `json:"extension_time,omitempty"`
+
+	// ExtensionsLeft Number of extensions left for this deployment. -1 if unlimited.
+	ExtensionsLeft *int                  `json:"extensions_left,omitempty"`
 	Status         *StatusResponseStatus `json:"status,omitempty"`
-	Uptime         *string               `json:"uptime,omitempty"`
 }
 
 // StatusResponseStatus defines model for StatusResponse.Status.
@@ -60,6 +70,9 @@ type ServerInterface interface {
 	// Deploy a challenge instance
 	// (POST /deploy)
 	DeployInstance(ctx echo.Context) error
+	// Extend the duration of a deployment
+	// (POST /extend)
+	ExtendInstance(ctx echo.Context) error
 	// Health check
 	// (GET /health)
 	GetHealth(ctx echo.Context) error
@@ -84,6 +97,17 @@ func (w *ServerInterfaceWrapper) DeployInstance(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.DeployInstance(ctx)
+	return err
+}
+
+// ExtendInstance converts echo context to params.
+func (w *ServerInterfaceWrapper) ExtendInstance(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ExtendInstance(ctx)
 	return err
 }
 
@@ -147,6 +171,7 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	}
 
 	router.POST(baseURL+"/deploy", wrapper.DeployInstance)
+	router.POST(baseURL+"/extend", wrapper.ExtendInstance)
 	router.GET(baseURL+"/health", wrapper.GetHealth)
 	router.GET(baseURL+"/status", wrapper.GetInstanceStatus)
 	router.POST(baseURL+"/terminate", wrapper.TerminateInstance)
@@ -156,18 +181,22 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"pgwAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

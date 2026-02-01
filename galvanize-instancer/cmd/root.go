@@ -2,21 +2,21 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/28Pollux28/poly-instancer/pkg/config"
+	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "poly-instancer",
-	Short: "Poly Instancer",
-	Long:  "Poly Instancer is an instancer using Ansible to deploy CTFs challenges for the PolyPWN CTF. CTFd connects to it to deploy challenges",
+	Use:   "galvanize",
+	Short: "Galvanize Instancer",
+	Long:  "Galvanize Instancer is an instancer using Ansible to deploy CTFs challenges. CTFd connects to it to deploy challenges using the Zync plugin",
 }
 
 var cfgFile string
@@ -41,22 +41,25 @@ func init() {
 
 func initConfig() {
 	if cfgFile == "" {
-		log.Println("No config file specified, using defaults")
-		if err := config.LoadDefaults(); err != nil {
-			log.Fatalf("Error loading default config: %v", err)
-		}
+		zap.S().Error("No config file specified")
+		os.Exit(1)
 		return
 	}
 
 	viper.SetConfigFile(cfgFile)
 	viper.SetConfigType("yaml")
 
+	viper.SetDefault("instancer.deployment_ttl", "1h")
+	viper.SetDefault("instancer.deployment_ttl_extension", "30m")
+	viper.SetDefault("instancer.deployment_max_extensions", 4)
+	viper.SetDefault("instancer.deployment_extension_window", "30m")
+
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Error reading config file: %v", err)
+		zap.S().Fatalf("Error reading config file: %v", err)
 	}
 
 	if err := config.Load(); err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		zap.S().Fatalf("Error loading config: %v", err)
 	}
 
 	viper.WatchConfig()
@@ -73,11 +76,11 @@ func handleConfigChange(filename string) {
 		return // ignore duplicate events
 	}
 	lastReload = time.Now()
-	log.Printf("Config file %s changed\n", filename)
+	zap.S().Infof("Config file %s changed", filename)
 
 	if err := config.Reload(); err != nil {
-		log.Printf("Error reloading config: %v", err)
+		zap.S().Errorf("Error reloading config: %v", err)
 		return
 	}
-	log.Println("Config reloaded successfully")
+	zap.S().Info("Config reloaded successfully")
 }

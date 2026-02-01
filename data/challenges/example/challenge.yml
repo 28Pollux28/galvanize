@@ -1,0 +1,62 @@
+name: example-challenge
+author: YourName
+category: web
+
+type: zync
+
+playbook_name: http  # Use 'http' for web challenges, 'tcp' for TCP challenges, or 'custom_compose' for custom Docker Compose setups
+deploy_parameters:
+  image: nginx:alpine  # Docker image to deploy
+  unique: false  # Set to true if there needs to be a unique instance for all players
+  published_ports: # Ports to expose from the container (Only for 'tcp' playbooks)
+    - 80  # Port to expose:
+  compose_definition: |- # Docker Compose definition (Only for 'custom_compose' playbooks)
+    version: '3'
+    services:
+      web:
+        image: nginx:alpine
+        ports:
+          - "80:80"
+  env:  # Environment variables passed to the container
+    FLAG: "flag{example_flag_here}"
+    TZ: Europe/Zurich
+
+
+# Challenge Difficulty Scoring System (CFSS)
+# https://res260.github.io/cfss/
+# Format: CFSS:X.X/TS:X/E:X/HSFC:N=X-X
+value: 3
+
+description: |-
+  ## Description (français)
+
+  Voici un exemple de challenge démontrant la structure d'un fichier de challenge.
+
+  Ce challenge démontre comment configurer un déploiement web basique avec Nginx.
+  L'objectif est de trouver le flag caché dans l'environnement du conteneur.
+
+  **Conseils:**
+  - Explorez l'application web déployée
+  - Cherchez des endpoints intéressants
+  - Analysez les réponses du serveur
+
+
+  ## Description (english)
+
+  This is an example challenge demonstrating the structure of a challenge file.
+
+  This challenge shows how to configure a basic web deployment with Nginx.
+  The goal is to find the flag hidden in the container environment.
+
+  **Tips:**
+  - Explore the deployed web application
+  - Look for interesting endpoints
+  - Analyze server responses
+
+flags:
+  - flag{example_flag_here}
+
+tags:
+  - A:YourName  # Author tag
+  - V:Example   # Venue/Event tag
+  - CFSS:0.2/TS:A/E:E/HSFC:N=3-5  # Difficulty scoring

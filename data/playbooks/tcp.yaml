@@ -1,18 +1,22 @@
 ---
 - hosts: all
   gather_facts: false
-  vars:
-    compose_definition:
-      services:
-        tcp:
-          image: "{{ image }}"
-          network_mode: bridge
-          ports: "{{ published_ports }}"
-          restart: unless-stopped
-      networks:
-        traefik:
-          external: true
   tasks:
+    - name: Build compose definition
+      ansible.builtin.set_fact:
+        compose_definition:
+          services:
+            tcp:
+              image: "{{ image }}"
+              environment: "{{ env | default({}) }}"
+              network_mode: bridge
+              ports: "{{ published_ports }}"
+              restart: unless-stopped
+          networks: "{{ {traefik_network: {'external': true}} }}"
+      tags:
+        - create
+        - delete
+
     - name: Déploiement du docker-compose
       community.docker.docker_compose_v2:
         definition: "{{ compose_definition }}"

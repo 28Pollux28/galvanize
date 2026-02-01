@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: CTF Challenge Instancer
+  title: Galvanize Instancer
   version: 1.2.0
-  description: API for deploying CTF challenges.
+  description: API for deploying CTF challenges using Ansible
 
 paths:
   /health:
@@ -98,8 +98,35 @@ paths:
                 $ref: '#/components/schemas/StatusResponse'
         '401':
           description: Unauthorized
+        '404':
+          description: No deployment
         '500':
-          description: Internal error
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /extend:
+    post:
+      summary: Extend the duration of a deployment
+      operationId: extendInstance
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Duration extended successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '400':
+          description: Cannot extend deployment (too early, max extensions reached, etc.)
+        '401':
+          description: Unauthorized
+        '404':
+          description: No deployment
+        '500':
+          description: Internal server error
 
 components:
   securitySchemes:
@@ -112,8 +139,12 @@ components:
     DeployRequest:
       type: object
       required:
+        - category
         - challenge_name
       properties:
+        category:
+          type: string
+          description: The category of the challenge to deploy.
         challenge_name:
           type: string
           description: The name of the challenge to deploy.
@@ -126,7 +157,14 @@ components:
           enum: [running, stopping, starting, error]
         connection_info:
           type: string
-        uptime:
+        expiration_time:
+          type: string
+          format: date-time
+        extensions_left:
+          type: integer
+          description: Number of extensions left for this deployment. -1 if unlimited.
+        extension_time:
+          description: Time duration each extension adds (e.g., "30m", "1h").
           type: string
 
     Error:

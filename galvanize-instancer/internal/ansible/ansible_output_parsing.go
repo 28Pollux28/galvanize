@@ -1,9 +1,11 @@
-package utils
+package ansible
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"go.uber.org/zap"
 )
 
 // ContainerInfo defines the structure for a single item in the 'containers' list.
@@ -32,6 +34,7 @@ type PublisherInfo struct {
 // Minimal structs to navigate the JSON path to the 'containers' field.
 // We use json.RawMessage to capture the raw JSON for the nested 'containers' list.
 type TaskHosts struct {
+	Action     json.RawMessage `json:"action"`
 	Containers json.RawMessage `json:"containers"`
 }
 
@@ -55,10 +58,10 @@ func ExtractContainerInfo(r io.Reader) ([]ContainerInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from reader: %w", err)
 	}
-
 	// Unmarshal into the RawRoot struct to access the RawMessage
 	var rawRoot RawRoot
 	if err := json.Unmarshal(jsonBytes, &rawRoot); err != nil {
+		zap.S().Debugf("Failed to unmarshal JSON into RawRoot: %s", jsonBytes)
 		return nil, fmt.Errorf("failed to unmarshal JSON into raw root structure: %w", err)
 	}
 
@@ -75,15 +78,25 @@ func ExtractContainerInfo(r io.Reader) ([]ContainerInfo, error) {
 		return nil, fmt.Errorf("JSON structure missing tasks in the first play")
 	}
 
-	// Iterate through all host results within the first task
-	for _, hostResult := range rawRoot.Plays[0].Tasks[0].Hosts {
-		// Unmarshal the raw bytes (RawMessage) into the final ContainerInfo struct
-		var containersForHost []ContainerInfo
-		if len(hostResult.Containers) > 0 {
-			if err := json.Unmarshal(hostResult.Containers, &containersForHost); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal container details for a host: %w", err)
+	for _, taskResult := range rawRoot.Plays[0].Tasks {
+		// Iterate through all host results within the task
+		for _, hostResult := range taskResult.Hosts {
+			var action string
+			if err := json.Unmarshal(hostResult.Action, &action); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal task action: %w", err)
 			}
-			allContainers = append(allContainers, containersForHost...)
+			if action != "community.docker.docker_compose_v2" {
+				zap.S().Debugf("Skipping action %s for host, not matching expected docker_compose_v2", action)
+				continue
+			}
+			// Unmarshal the raw bytes (RawMessage) into the final ContainerInfo struct
+			var containersForHost []ContainerInfo
+			if len(hostResult.Containers) > 0 {
+				if err := json.Unmarshal(hostResult.Containers, &containersForHost); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal container details for a host: %w", err)
+				}
+				allContainers = append(allContainers, containersForHost...)
+			}
 		}
 	}
 
