@@ -33,6 +33,7 @@ type PublisherInfo struct {
 
 // Minimal structs to navigate the JSON path to the 'containers' field.
 // We use json.RawMessage to capture the raw JSON for the nested 'containers' list.
+
 type TaskHosts struct {
 	Action     json.RawMessage `json:"action"`
 	Containers json.RawMessage `json:"containers"`

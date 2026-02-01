@@ -16,14 +16,14 @@ func GetConnectionInfo(containerInfos []ContainerInfo, host string) (string, err
 		}
 		// Check if we have a traefik label
 		if traefikLabel != "" {
-			label_parts := strings.Split(traefikLabel, "`")
-			if len(label_parts) >= 2 {
-				domainName := "https://" + label_parts[1] + "/"
+			labelParts := strings.Split(traefikLabel, "`")
+			if len(labelParts) >= 2 {
+				domainName := "https://" + labelParts[1] + "/"
 				return domainName, nil
 			}
 		}
 		// Check if we have published ports
-		ports := []string{}
+		var ports []string
 		for _, pub := range ci.Publishers {
 			if pub.PublishedPort != 0 {
 				// If IP is IPv6, continue

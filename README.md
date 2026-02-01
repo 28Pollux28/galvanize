@@ -21,36 +21,36 @@ Galvanize Instancer is a lightweight service that deploys on-demand CTF challeng
 
 1. Create your configuration file:
 
-```bash
-cp config.example.yaml config.yaml
-```
+    ```bash
+    cp config.example.yaml config.yaml
+    ```
 
 2. Edit `config.yaml` to set:
 
-- `auth.jwt_secret`
-- `instancer.instancer_host`
-- `instancer.ansible.inventory`
-- `instancer.ansible.user`
-- `instancer.ansible.private_key`
+   - `auth.jwt_secret`
+   - `instancer.instancer_host`
+   - `instancer.ansible.inventory`
+   - `instancer.ansible.user`
+   - `instancer.ansible.private_key`
 
 3. Update the SSH key mount in `docker-compose.yml`:
 
-```yaml
-    volumes:
-      - /path/to/your/ssh/key:/home/galvanize/.ssh/ansible-ssh:Z,ro
-```
+    ```yaml
+        volumes:
+          - /path/to/your/ssh/key:/home/galvanize/.ssh/ansible-ssh:Z,ro
+    ```
 
 4. Start the service:
 
-```bash
-docker compose up -d --build
-```
+    ```bash
+    docker compose up -d --build
+    ```
 
 5. Check health:
 
-```bash
-curl -f http://localhost:8080/health
-```
+    ```bash
+    curl -f http://localhost:8080/health
+    ```
 
 ## Zync CTFd Plugin Integration
 

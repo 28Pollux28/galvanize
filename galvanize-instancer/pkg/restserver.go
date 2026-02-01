@@ -12,7 +12,7 @@ import (
 	"github.com/28Pollux28/galvanize/pkg/api"
 	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/models"
-	scheduler "github.com/28Pollux28/galvanize/pkg/scheduler"
+	"github.com/28Pollux28/galvanize/pkg/scheduler"
 	"github.com/28Pollux28/galvanize/pkg/utils"
 	results "github.com/apenella/go-ansible/v2/pkg/execute/result/json"
 	"github.com/labstack/echo/v4"
