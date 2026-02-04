@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 )
 
-func BuildComposeProject(params map[string]interface{}, challengeName, teamID string) string {
+func BuildComposeProject(unique bool, challengeName, teamID string) string {
 	var composeProject string
-	if unique, ok := params["unique"].(bool); ok && unique == true {
+	if unique == true {
 		composeProject = "global-" + challengeName
 	} else {
 		composeProject = "polypwn-" + challengeName + "-" + teamID

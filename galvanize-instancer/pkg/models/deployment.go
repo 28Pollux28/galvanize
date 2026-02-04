@@ -9,6 +9,7 @@ import (
 	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/config"
+	"github.com/28Pollux28/galvanize/pkg/utils"
 	"github.com/apenella/go-ansible/v2/pkg/execute/result/json"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -29,11 +30,11 @@ type Deployment struct {
 	gorm.Model
 	ChallengeName     string `gorm:"index"`
 	Category          string
-	TeamID            string `gorm:"index"`
+	TeamID            *string `gorm:"index"`
 	Status            string
 	ConnectionInfo    string
 	Error             string
-	ExpiresAt         time.Time `gorm:"index"`
+	ExpiresAt         *time.Time `gorm:"index"`
 	TimeExtensionLeft int
 }
 
@@ -86,13 +87,19 @@ func GetUniqueDeployment(db *gorm.DB, category, challengeName string, lock bool)
 	return &deployment, nil
 }
 
+func GetAllUniqueDeployments(db *gorm.DB) ([]Deployment, error) {
+	var deployments []Deployment
+	result := db.Where("team_id IS NULL").Find(&deployments)
+	return deployments, result.Error
+}
+
 func CreateDeployment(db *gorm.DB, challengeName, teamID, category string, defaultDeploymentTTL time.Duration, maxExtensions int) (*Deployment, error) {
 	deployment := &Deployment{
 		ChallengeName:     challengeName,
-		TeamID:            teamID,
+		TeamID:            &teamID,
 		Category:          category,
 		Status:            DeploymentStatusStarting,
-		ExpiresAt:         time.Now().Add(defaultDeploymentTTL),
+		ExpiresAt:         utils.Ptr(time.Now().Add(defaultDeploymentTTL)),
 		TimeExtensionLeft: maxExtensions,
 	}
 	result := db.Create(deployment)
@@ -123,7 +130,10 @@ func DeleteDeployment(db *gorm.DB, deployment *Deployment) error {
 }
 
 func ExtendDeploymentExpiration(db *gorm.DB, deployment *Deployment, extension, extensionWindow time.Duration, maxExtensions int) error {
-	timeLeft := time.Until(deployment.ExpiresAt)
+	if deployment.ExpiresAt == nil {
+		return errors.New("deployment has no expiration time")
+	}
+	timeLeft := time.Until(*deployment.ExpiresAt)
 	if timeLeft > extensionWindow {
 		return errors.New("cannot extend: extension window not reached")
 	}
@@ -140,7 +150,7 @@ func ExtendDeploymentExpiration(db *gorm.DB, deployment *Deployment, extension, 
 		}
 	}
 
-	deployment.ExpiresAt = deployment.ExpiresAt.Add(extension)
+	deployment.ExpiresAt = utils.Ptr(deployment.ExpiresAt.Add(extension))
 	if maxExtensions > -1 {
 		deployment.TimeExtensionLeft -= 1
 	}
@@ -156,8 +166,11 @@ func TerminateDeployment(db *gorm.DB, idx *challenge.ChallengeIndex, conf *confi
 		zap.S().Errorf("Failed to get challenge infos: %v", err)
 		return fmt.Errorf("failed to get challenge infos: %w", err)
 	}
+	if teamID == nil {
+		teamID = utils.Ptr("")
+	}
 
-	executor, resultsBuff := ansible.PreparePlaybook(conf, "delete", chall, teamID, chall.DeployParameters)
+	executor, resultsBuff := ansible.PreparePlaybook(conf, "delete", chall, *teamID, chall.DeployParameters)
 
 	if err := executor.Execute(context.Background()); err != nil {
 		zap.S().Errorf("Ansible undeploy failed: %v", err)
@@ -179,7 +192,11 @@ func TerminateDeployment(db *gorm.DB, idx *challenge.ChallengeIndex, conf *confi
 		zap.S().Errorf("Failed to delete deployment record: %v", err)
 		return err
 	}
-	zap.S().Debugf("Termination of challenge %s for team %s completed successfully.", challengeName, teamID)
+	if *teamID == "" {
+		zap.S().Debugf("Termination of unique challenge %s completed successfully.", challengeName)
+		return nil
+	}
+	zap.S().Debugf("Termination of challenge %s for team %p completed successfully.", challengeName, teamID)
 	//pkg.activeInstancesPerTeam.WithLabelValues(teamID).Dec()
 
 	return nil

@@ -16,7 +16,7 @@ import (
 )
 
 func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Challenge, teamID string, params map[string]interface{}) (execute.Executor, *bytes.Buffer) {
-	composeProject := docker.BuildComposeProject(params, challenge.Name, teamID)
+	composeProject := docker.BuildComposeProject(challenge.Unique, challenge.Name, teamID)
 
 	// Ansible playbook options
 	playbookOpts := &playbook.AnsiblePlaybookOptions{

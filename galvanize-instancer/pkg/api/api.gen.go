@@ -29,6 +29,28 @@ const (
 	StatusResponseStatusStopping StatusResponseStatus = "stopping"
 )
 
+// AdminDeployRequest defines model for AdminDeployRequest.
+type AdminDeployRequest struct {
+	// Category The category of the challenge to deploy.
+	Category string `json:"category"`
+
+	// ChallengeName The name of the challenge to deploy.
+	ChallengeName string `json:"challenge_name"`
+}
+
+// BulkOperationResponse defines model for BulkOperationResponse.
+type BulkOperationResponse struct {
+	Challenges      []ChallengeCategoryResponse `json:"challenges"`
+	ChallengesCount int                         `json:"challenges_count"`
+	Message         string                      `json:"message"`
+}
+
+// ChallengeCategoryResponse defines model for ChallengeCategoryResponse.
+type ChallengeCategoryResponse struct {
+	Category      string `json:"category"`
+	ChallengeName string `json:"challenge_name"`
+}
+
 // DeployRequest defines model for DeployRequest.
 type DeployRequest struct {
 	// Category The category of the challenge to deploy.
@@ -54,10 +76,19 @@ type StatusResponse struct {
 	// ExtensionsLeft Number of extensions left for this deployment. -1 if unlimited.
 	ExtensionsLeft *int                  `json:"extensions_left,omitempty"`
 	Status         *StatusResponseStatus `json:"status,omitempty"`
+
+	// Unique Whether this is a unique deployment or not.
+	Unique *bool `json:"unique,omitempty"`
 }
 
 // StatusResponseStatus defines model for StatusResponse.Status.
 type StatusResponseStatus string
+
+// DeployAdminInstanceJSONRequestBody defines body for DeployAdminInstance for application/json ContentType.
+type DeployAdminInstanceJSONRequestBody = AdminDeployRequest
+
+// TerminateAdminInstanceJSONRequestBody defines body for TerminateAdminInstance for application/json ContentType.
+type TerminateAdminInstanceJSONRequestBody = AdminDeployRequest
 
 // DeployInstanceJSONRequestBody defines body for DeployInstance for application/json ContentType.
 type DeployInstanceJSONRequestBody = DeployRequest
@@ -67,6 +98,24 @@ type TerminateInstanceJSONRequestBody = DeployRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Check communication with Zync
+	// (POST /admin/config_check)
+	ConfigCheck(ctx echo.Context) error
+	// Deploy a unique challenge (admin only)
+	// (POST /admin/deploy)
+	DeployAdminInstance(ctx echo.Context) error
+	// Deploy all unique challenges (admin only)
+	// (POST /admin/deploy-all)
+	DeployAllAdminInstances(ctx echo.Context) error
+	// List all unique challenges
+	// (GET /admin/list_unique_challs)
+	ListUniqueChallenges(ctx echo.Context) error
+	// Terminate a unique challenge (admin only)
+	// (POST /admin/terminate)
+	TerminateAdminInstance(ctx echo.Context) error
+	// Terminate all unique challenges (admin only)
+	// (POST /admin/terminate-all)
+	TerminateAllAdminInstances(ctx echo.Context) error
 	// Deploy a challenge instance
 	// (POST /deploy)
 	DeployInstance(ctx echo.Context) error
@@ -87,6 +136,72 @@ type ServerInterface interface {
 // ServerInterfaceWrapper converts echo contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler ServerInterface
+}
+
+// ConfigCheck converts echo context to params.
+func (w *ServerInterfaceWrapper) ConfigCheck(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ConfigCheck(ctx)
+	return err
+}
+
+// DeployAdminInstance converts echo context to params.
+func (w *ServerInterfaceWrapper) DeployAdminInstance(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeployAdminInstance(ctx)
+	return err
+}
+
+// DeployAllAdminInstances converts echo context to params.
+func (w *ServerInterfaceWrapper) DeployAllAdminInstances(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeployAllAdminInstances(ctx)
+	return err
+}
+
+// ListUniqueChallenges converts echo context to params.
+func (w *ServerInterfaceWrapper) ListUniqueChallenges(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListUniqueChallenges(ctx)
+	return err
+}
+
+// TerminateAdminInstance converts echo context to params.
+func (w *ServerInterfaceWrapper) TerminateAdminInstance(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.TerminateAdminInstance(ctx)
+	return err
+}
+
+// TerminateAllAdminInstances converts echo context to params.
+func (w *ServerInterfaceWrapper) TerminateAllAdminInstances(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.TerminateAllAdminInstances(ctx)
+	return err
 }
 
 // DeployInstance converts echo context to params.
@@ -170,6 +285,12 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 		Handler: si,
 	}
 
+	router.POST(baseURL+"/admin/config_check", wrapper.ConfigCheck)
+	router.POST(baseURL+"/admin/deploy", wrapper.DeployAdminInstance)
+	router.POST(baseURL+"/admin/deploy-all", wrapper.DeployAllAdminInstances)
+	router.GET(baseURL+"/admin/list_unique_challs", wrapper.ListUniqueChallenges)
+	router.POST(baseURL+"/admin/terminate", wrapper.TerminateAdminInstance)
+	router.POST(baseURL+"/admin/terminate-all", wrapper.TerminateAllAdminInstances)
 	router.POST(baseURL+"/deploy", wrapper.DeployInstance)
 	router.POST(baseURL+"/extend", wrapper.ExtendInstance)
 	router.GET(baseURL+"/health", wrapper.GetHealth)
@@ -181,22 +302,28 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8xVTW/cNhD9KwO2hwRQtGs7PVS31E5S91AUsYMebMOgqdkVE4lkhiM322D/e0FSWknW",
-	"btKgLpIbJXI++N6bx09C2cZZg4a9KD4JrypsZFyeoavt5g1+aNFz+OHIOiTWGLeVZFxb2oR1iV6Rdqyt",
-	"EYW4rBD6XbAr4PBdybpGs0ZgC2XMnItM8MahKIRn0mYttpnYnbs1ssH9ucPO1+XdZoLwQ6sJS1FcDa3P",
-	"6t3sQu3dO1QcWnpJZGl+/wa9l+vY4rzaLMkFS279G/TOGo970LTGoAqXvNVmZfdkzQR+dJpkPMM6gbOy",
-	"1EgWhSgl47P4N9sXyGj8OO4BqLpBKNuUG1CqCnYhIMvSwxPM13kG1+Jk2VyLsDiqrsXT/LPV/G2NK56X",
-	"+71t7pACg8NRCEdhZQm40r5jskHDOTw7Ar2C1tS60YzlqKY2jGukUNRHfEMtNG0TSKbWmNBR2LPO9UtJ",
-	"nJYYab3JvsxeSI+qJc2bizAeibE7lIT0ouVq+HrV0/Hbn5ehWjwtim53aLxidmIbEvdkTxF68cd5xCLB",
-	"oM0aTi9fDVr3EQPNdcgVdk53U3BuPEujYrF7JJ/yHeXH+TLAZB0a6bQoxEm+zE9EJpzkKt5nkYpFado0",
-	"8EGgURPnpSg6P+gLiDRS6PkXW246CTOaGCidq7WKoYt3PrTQO0tY/Ui4EoX4YTFYz6LzncXUdLbTyWVq",
-	"Mf5IUxTbPl4ez/E728kHuiZBKoWOsQwoPF8u5zHn5l7WuoSuNizgrXlv7F9mjO5ZCj+ah781suXKkv67",
-	"r/HzZ/uSNaEsN6ANOLJrQu8jHjUyhvifUo+PAmpysAjmwzszkpE1eKR7JMDu4CB4UVxNpX51s73JhG+b",
-	"Rgbv764EcuTEupdISLSIM14eltXLuD+R1YTex4PhgQfvweNs54GxKSzBt0qh96u2rjcHpXMqjbHcBY28",
-	"C56wtYCS6k0Gjfw49jsKNotlBsgqf/oVsnq+x1DtqOhIPI9OduIqPry758KuQE7KB9IrlHUyxjXu4fw1",
-	"8q/pxH+ke/qIDo/Alz19xv0F0r1WCNpD6n7zEJsJFKl/UBWq9+nOQ/VDd+5FnoT4baWeTgAhk8b7XlyP",
-	"rcDv3r5eI48HtuMw8slIjTaS8bB3XfZHvr9XcY8B9N2GqR187V8T/3+Zyg7EQ4/IdvtPAAAA//9yyuoy",
-	"pgwAAA==",
+	"H4sIAAAAAAAC/+xY0W/bthP+Vw78/R5awLGdJnuY31Kn7TIM29CmKLA2MBjpbLGlSJU8uVUL/+8DScmS",
+	"I9qJMadthr3J0vF4930f7878yhKdF1qhIssmX5lNMsy5fzxLc6HOsZC6eokfS7Tk3hZGF2hIoLdJOOFC",
+	"m8o9p2gTIwoSWrEJu8wQmq+g50Dud8alRLVAIA2p9zxkA0ZVgWzCLBmhFmw1YGu7meI5xn27L/v5XQ2Y",
+	"wY+lMJiyyds29N5+V+ul+vo9JuRCelrKD38UaLgL4SXaQiuLETwaT/6XIMz9w/8NztmE/W/Ugj2qkR5N",
+	"myXTOqC199U6Dm4MrzaQsbNEl8ozUtsIRbhA46xytJYvsPNxCwaNYcRx91UUke1x71TJHcg+JG//6Tfg",
+	"8MwYbfr571RKz8kr4lTaHTxrpTBxSc6Emuso3fi5EOEUzUgEcOba5JzYhKWc8Mi/HcQWEirbXXcDVJEj",
+	"pGXwDciTDNZLgKephUc4XAwH8I6djPN3zD0cZ+/Y4+HO3exM4pz62/1e5tdoHIOtKThTmGsDlAlbM5mj",
+	"oiEcHYOYQ6mkyAVh2tmzc26tx9ftharMHcmmVMpF5L7pomgeuaHwiJ7Wq0gCpRIfywhMbzKkDOsIhQUO",
+	"wbITLWgDSlMnxmutJXIVU4ULG5PSCKpeuYoWlHCN3KA5Kylrfz1vaP71zaXLwls75/5ru1lGVLCVc9yI",
+	"aDODsz8vPMYhYKEWML183p4hC6V1L8+UFdfSS0mQdI5fcLnkSnxBuFCWuEr8rks0Njg+Hj4Zjh12ukDF",
+	"C8Em7GQ4Hp6wASs4ZT6xEXddcZRoNReLWZJh8sGfAx2qi25axEXKJmzqrabeyB3ecG68nyfjcT+zqc7z",
+	"UokkSPiToAz+qlQCtkwStHZeShfd6fi4v/S14iVl2ogvmAajk77Rc22uRZqigiPw3R24dwzrurIasJ9i",
+	"kV0oQqO4BItmiQaC7rrks8nbTdrfXq2uBsyWec5dfWUeBkjiKXpXNbaB1+2ohpLu4294ZKE0oqWnOq3q",
+	"UkQY+iMvCllvOHpvXTrNmHNba45MQKvNMkymxFWP2id9AM/b01VH6rEvqKErCvqSS5FCvTeM4LX6oPQn",
+	"BeveCxfn30ASp+Ofd2bEpUGeVoCfhSXbEdFBWHhWa201OLwoQxJtEWw78SMvRtBKVo/76jziUt6qUCk3",
+	"RGpZXCgHASk+n0ZAc4bdWu+bSUPzgywsDYdS9li0W2mUwtIsmM+8uWdkgRE2fxOWXnvLaTsRx8v5nak8",
+	"9D+DPs8uajed9CB5wEz7nKI8d6klNLlQnHD7Ab1sTH7kLhLBsInb9c5vOhScjk8jI7DuFpK5LtW9sr8m",
+	"bZ9yvRbD7ordCuL2oj3+TkWbuuQ/+KrdYfOOhftuc+E9H+Z/0TR4t5lOKCiMXhi01uMhkfBBTnhtrRCN",
+	"RLys/N/3dLusnvnvG7K6p3Jw43olgsf5+nrDB4VppwvIaqt0plwpTfWibs1+RFoDciOrAeT8c/cqwyBP",
+	"MkwHgJQMH+8hq9saxX0WlcCVv1Nb3wTpOfCN7R3pGXIZ7iaiI98LpF+CxT+ke/N+rL3fufWyrc/9KzRL",
+	"kSAICyH66iY2G1CE+CHcUPic29235dyIPAjx+0o9WIBBMgKXe7W6PRT4w5evF0g3/q05Zjyf+8y5P15X",
+	"PPx0+y3mzmgTWa3+DgAA//9KaaiQRhsAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

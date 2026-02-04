@@ -79,7 +79,7 @@ func (s *ExpiryScheduler) fetchNextExpiries() {
 	window := time.Now().Add(s.lookahead)
 
 	var deployments []models.Deployment
-	err := s.db.Where("status = ? AND expires_at IS NOT NULL AND expires_at <= ?", // Not null excludes unique deployments
+	err := s.db.Where("status = ? AND expires_at IS NOT NULL AND expires_at <= ? AND team_id IS NOT NULL", // Not null excludes unique deployments
 		"running", window).
 		Order("expires_at ASC").
 		Find(&deployments).Error
@@ -97,7 +97,7 @@ func (s *ExpiryScheduler) fetchNextExpiries() {
 
 	next := deployments[0]
 	s.l.Debugf("scheduling expiry for deployment %d at %s", next.ID, next.ExpiresAt)
-	delay := time.Until(next.ExpiresAt)
+	delay := time.Until(*next.ExpiresAt)
 	if delay < 0 {
 		delay = 0
 	}
@@ -118,7 +118,7 @@ func (s *ExpiryScheduler) nextExpiry() {
 
 	next := s.upcoming[0]
 	s.l.Debugf("scheduling expiry for deployment %d at %s", next.ID, next.ExpiresAt)
-	delay := time.Until(next.ExpiresAt)
+	delay := time.Until(*next.ExpiresAt)
 	if delay < 0 {
 		delay = 0
 	}
@@ -161,13 +161,13 @@ func (s *ExpiryScheduler) removeFromUpcoming(deploymentID uint) {
 func (s *ExpiryScheduler) terminateDeployment(deploymentID uint) {
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var d models.Deployment
-		zap.S().Debugf("Acquiring lock for deployment %d", deploymentID)
+		s.l.Debugf("Acquiring lock for deployment %d", deploymentID)
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&d, deploymentID).Error; err != nil {
 			return err
 		}
 
-		if time.Now().Before(d.ExpiresAt) {
+		if time.Now().Before(*d.ExpiresAt) {
 			s.l.Errorf("deployment %d was extended, skipping", deploymentID)
 			return errors.New("deployment was extended")
 		}
@@ -180,7 +180,6 @@ func (s *ExpiryScheduler) terminateDeployment(deploymentID uint) {
 		if err != nil {
 			return fmt.Errorf("failed to update deployment status to stopping: %w", err)
 		}
-		tx.Commit()
 
 		return nil
 	})

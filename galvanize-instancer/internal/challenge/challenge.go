@@ -41,6 +41,9 @@ func (idx *ChallengeIndex) BuildIndex(baseDir string) error {
 	defer idx.mu.Unlock()
 	idx.challs = make(map[string]*Challenge)
 	err := filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "example") {
+			return filepath.SkipDir
+		}
 		if err != nil || d.IsDir() || (d.Name() != "challenge.yml" && d.Name() != "challenge.yaml") {
 			return err
 		}
@@ -70,6 +73,18 @@ func (idx *ChallengeIndex) Get(category, name string) (*Challenge, error) {
 		return nil, fmt.Errorf("challenge not found: %s", key)
 	}
 	return chall, nil
+}
+
+func (idx *ChallengeIndex) GetAllUnique() []*Challenge {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	var unique []*Challenge
+	for _, chall := range idx.challs {
+		if chall.Unique {
+			unique = append(unique, chall)
+		}
+	}
+	return unique
 }
 
 func parseChallenge(challengeFilePath string) (*Challenge, error) {

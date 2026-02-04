@@ -253,13 +253,17 @@ func (s *Server) GetInstanceStatus(ctx echo.Context) error {
 			Status: utils.Ptr(api.StatusResponseStatusStarting),
 		})
 	case models.DeploymentStatusRunning:
-		conf := config.Get()
 		response := api.StatusResponse{
 			Status:         utils.Ptr(api.StatusResponseStatusRunning),
 			ConnectionInfo: &deployment.ConnectionInfo,
-			ExpirationTime: &deployment.ExpiresAt,
-			ExtensionsLeft: &deployment.TimeExtensionLeft,
-			ExtensionTime:  utils.Ptr(utils.FormatDuration(conf.Instancer.DeploymentTTLExtension)),
+			Unique:         &chall.Unique,
+		}
+		// Only include expiration info for non-unique deployments
+		if !chall.Unique {
+			conf := config.Get()
+			response.ExpirationTime = deployment.ExpiresAt
+			response.ExtensionsLeft = &deployment.TimeExtensionLeft
+			response.ExtensionTime = utils.Ptr(utils.FormatDuration(conf.Instancer.DeploymentTTLExtension))
 		}
 		return ctx.JSON(200, response)
 	case models.DeploymentStatusError:
@@ -303,7 +307,7 @@ func (s *Server) ExtendInstance(ctx echo.Context) error {
 	return ctx.JSON(200, api.StatusResponse{
 		Status:         utils.Ptr(api.StatusResponseStatusRunning),
 		ConnectionInfo: &d.ConnectionInfo,
-		ExpirationTime: &d.ExpiresAt,
+		ExpirationTime: d.ExpiresAt,
 		ExtensionsLeft: &d.TimeExtensionLeft,
 		ExtensionTime:  utils.Ptr(utils.FormatDuration(conf.Instancer.DeploymentTTLExtension)),
 	})
