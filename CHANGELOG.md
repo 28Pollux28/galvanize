@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.1.1 (2025-02-07)
+- Add json error response to status 404 for unique challenges
+
 ## v0.1.0 (2025-02-04)
 - Initial release
 - Add `/admin/config_check` endpoint to check link with zync plugin
