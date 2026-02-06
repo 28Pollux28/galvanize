@@ -242,6 +242,9 @@ func (s *Server) GetInstanceStatus(ctx echo.Context) error {
 	}
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
+			if chall.Unique && claims.Role != "admin" {
+				return ctx.JSON(404, api.Error{Message: utils.Ptr("cannot deploy unique challenge")})
+			}
 			return ctx.NoContent(404)
 		}
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to get deployment status: %v", err))})
