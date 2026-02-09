@@ -188,7 +188,7 @@ func TerminateDeployment(db *gorm.DB, idx challenge.ChallengeIndexer, deployer a
 		zap.S().Debugf("Termination of unique challenge %s completed successfully.", challengeName)
 		return nil
 	}
-	zap.S().Debugf("Termination of challenge %s for team %p completed successfully.", challengeName, teamID)
+	zap.S().Debugf("Termination of challenge %s for team %s completed successfully.", challengeName, *teamID)
 
 	return nil
 }

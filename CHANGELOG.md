@@ -1,6 +1,9 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+- fix go.mod go version
+- fix logging issue on terminate challenge
+- change docker-compose project name to `galvanize`
 
 ## v0.2.0 (2026-02-09)
 - Rework project to use Dependency Injection

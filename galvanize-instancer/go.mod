@@ -1,6 +1,6 @@
 module github.com/28Pollux28/galvanize
 
-go 1.25.0
+go 1.25.1
 
 require (
 	github.com/apenella/go-ansible/v2 v2.4.1

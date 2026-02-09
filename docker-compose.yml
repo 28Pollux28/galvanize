@@ -1,4 +1,4 @@
-name: Galvanize Instancer
+name: Galvanize
 services:
   instancer:
     build:
