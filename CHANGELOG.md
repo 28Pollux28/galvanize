@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+
+## v0.2.1 (2026-02-10)
 - fix go.mod go version
 - fix logging issue on terminate challenge
 - change docker-compose project name to `galvanize`

@@ -84,6 +84,10 @@ else
     echo "Warning: $CHANGELOG_FILE not found, skipping changelog update"
 fi
 
+echo "Generating API specification..."
+make api-spec
+make api-gen
+
 echo ""
 echo "Version bumped from $CURRENT_VERSION to $NEW_VERSION"
 
