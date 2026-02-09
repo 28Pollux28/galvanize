@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+
+## v0.2.2 (2026-02-10)
 - fix action capital letter in repo name
 
 ## v0.2.1 (2026-02-10)
