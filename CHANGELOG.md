@@ -1,6 +1,7 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+- fix action capital letter in repo name
 
 ## v0.2.1 (2026-02-10)
 - fix go.mod go version
