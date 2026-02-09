@@ -35,7 +35,6 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path")
-	rootCmd.AddCommand(serveCmd)
 	cobra.OnInitialize(initConfig)
 }
 

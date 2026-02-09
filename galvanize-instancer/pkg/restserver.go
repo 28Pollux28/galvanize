@@ -14,7 +14,6 @@ import (
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"github.com/28Pollux28/galvanize/pkg/scheduler"
 	"github.com/28Pollux28/galvanize/pkg/utils"
-	results "github.com/apenella/go-ansible/v2/pkg/execute/result/json"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -24,51 +23,62 @@ import (
 // Server implements api.ServerInterface
 type Server struct {
 	db          *gorm.DB
-	challIdx    *challenge.ChallengeIndex
+	challIdx    challenge.ChallengeIndexer
+	confProv    config.Provider
+	deployer    ansible.Deployer
 	expirySched *scheduler.ExpiryScheduler
 	kmu         keymutex.KeyMutex
 	wg          sync.WaitGroup
 }
 
+// ServerOpts holds the dependencies needed to construct a Server.
+type ServerOpts struct {
+	DB               *gorm.DB
+	ChallengeIndexer challenge.ChallengeIndexer
+	ConfigProvider   config.Provider
+	Deployer         ansible.Deployer
+	ExpiryScheduler  *scheduler.ExpiryScheduler
+	KeyMutex         keymutex.KeyMutex
+}
+
 var _ api.ServerInterface = (*Server)(nil)
-var expirySchedCtx context.Context
-var expirySchedCancel context.CancelFunc
 
-func NewServer(dbPath string) *Server {
-	db, err := InitDB(dbPath)
-	if err != nil {
-		zap.S().Fatalf("Failed to initialize database: %v", err)
+// NewServerWithOpts creates a Server from explicitly provided dependencies.
+// Mandatory dependencies are DB, ChallengeIndexer, and ConfigProvider.
+// Deployer will default to AnsibleDeployer and KeyMutex will default to a hashed key mutex if not provided.
+func NewServerWithOpts(opts ServerOpts) *Server {
+	kmu := opts.KeyMutex
+	if kmu == nil {
+		kmu = keymutex.NewHashed(20)
 	}
+	deployer := opts.Deployer
+	if deployer == nil {
+		deployer = &ansible.AnsibleDeployer{}
+	}
+	return &Server{
+		db:          opts.DB,
+		challIdx:    opts.ChallengeIndexer,
+		confProv:    opts.ConfigProvider,
+		deployer:    deployer,
+		expirySched: opts.ExpiryScheduler,
+		kmu:         kmu,
+	}
+}
 
-	conf := config.Get()
-	challIdx, err := challenge.NewChallengeIndex(conf.Instancer.ChallengeDir)
-	if err != nil {
-		zap.S().Fatalf("Failed to initialize challenge index: %v", err)
-	}
-
-	expirySched := scheduler.NewExpiryScheduler(db, challIdx, zap.S().Named("ExpiryScheduler"))
-	s := &Server{
-		db:          db,
-		challIdx:    challIdx,
-		expirySched: expirySched,
-		kmu:         keymutex.NewHashed(20),
-	}
-	expirySchedCtx, expirySchedCancel = context.WithCancel(context.Background())
+// StartScheduler launches the expiry scheduler in a background goroutine.
+// The caller is responsible for cancelling ctx when shutdown begins.
+func (s *Server) StartScheduler(ctx context.Context, sched *scheduler.ExpiryScheduler) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		expirySched.Start(expirySchedCtx)
+		sched.Start(ctx)
 	}()
-
-	//s.SyncMetrics()
-
-	return s
 }
 
+// Wait blocks until all background goroutines have completed.
 func (s *Server) Wait(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
-		expirySchedCancel()
 		s.wg.Wait()
 		close(done)
 	}()
@@ -151,7 +161,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		zap.S().Errorf("Failed to check existing deployments: %v", err)
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to check existing deployments: %v", err))}) //TODO notify admin
 	}
-	conf := config.Get()
+	conf := s.confProv.GetConfig()
 
 	s.wg.Add(1)
 	_, err = models.CreateDeployment(s.db, chall.Name, claims.TeamID, chall.Category, conf.Instancer.DeploymentTTL, conf.Instancer.DeploymentMaxExtensions)
@@ -163,50 +173,21 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	}
 	_ = s.kmu.UnlockKey(id)
 
-	executor, resultsBuff := ansible.PreparePlaybook(conf, "create", chall, claims.TeamID, chall.DeployParameters)
 	go func() {
 		defer s.wg.Done()
 		deployOps.Inc()
 		deployment, dbErr := models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
 		if dbErr != nil {
-			zap.S().Errorf("Failed to get deployment for error update: %v", err)
+			zap.S().Errorf("Failed to get deployment for error update: %v", dbErr)
 			return
 		}
-		if err := executor.Execute(context.Background()); err != nil {
-			zap.S().Errorf("Ansible deploy failed: %v", err)
 
+		connInfo, err := s.deployer.Deploy(context.Background(), conf, chall, claims.TeamID)
+		if err != nil {
+			zap.S().Errorf("Deploy failed for challenge %s team %s: %v", chall.Name, claims.TeamID, err)
 			dbErr = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
 			if dbErr != nil {
 				zap.S().Errorf("Saving deployment error status failed: %v", dbErr)
-				return
-			}
-			res, err := results.ParseJSONResultsStream(resultsBuff)
-			if err != nil {
-				zap.S().Errorf("Failed to parse Ansible results: %v", err)
-			}
-			zap.S().Errorf("Ansible deploy fail reason: %s", res.String())
-			return
-		}
-
-		containerInfos, err := ansible.ExtractContainerInfo(resultsBuff)
-		if err != nil {
-			zap.S().Errorf("Failed to extract container info: %v", err)
-		}
-
-		if len(containerInfos) == 0 {
-			zap.S().Errorf("No container info found in Ansible results for challenge %s for team %s", req.ChallengeName, claims.TeamID)
-			err := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "No container info found in Ansible results")
-			if err != nil {
-				zap.S().Errorf("Failed to save deployment error status: %v", err)
-			}
-			return
-		}
-		connInfo, err := ansible.GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost)
-		if err != nil {
-			zap.S().Errorf("Failed to build connection info: %v", err)
-			dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to build connection info: "+err.Error())
-			if dbErr != nil {
-				zap.S().Errorf("Failed to save deployment error status: %v", err)
 			}
 			return
 		}
@@ -263,7 +244,7 @@ func (s *Server) GetInstanceStatus(ctx echo.Context) error {
 		}
 		// Only include expiration info for non-unique deployments
 		if !chall.Unique {
-			conf := config.Get()
+			conf := s.confProv.GetConfig()
 			response.ExpirationTime = deployment.ExpiresAt
 			response.ExtensionsLeft = &deployment.TimeExtensionLeft
 			response.ExtensionTime = utils.Ptr(utils.FormatDuration(conf.Instancer.DeploymentTTLExtension))
@@ -299,7 +280,7 @@ func (s *Server) ExtendInstance(ctx echo.Context) error {
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to get deployment status: %v", err))})
 	}
 
-	conf := config.Get()
+	conf := s.confProv.GetConfig()
 	err = models.ExtendDeploymentExpiration(s.db, d, conf.Instancer.DeploymentTTLExtension, conf.Instancer.DeploymentExtensionWindow, conf.Instancer.DeploymentMaxExtensions)
 	if err != nil {
 		return ctx.JSON(400, api.Error{Message: utils.Ptr(err.Error())})
@@ -357,10 +338,10 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 	}
 	tx.Commit()
 
-	conf := config.Get()
+	conf := s.confProv.GetConfig()
 	go func() {
 		defer s.wg.Done()
-		err = models.TerminateDeployment(s.db, s.challIdx, conf, deployment)
+		err = models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
 		if err != nil {
 			zap.S().Errorf("Failed to terminate instance: %v", err)
 		}

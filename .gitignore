@@ -6,7 +6,8 @@ data/*
 !data/challenges/
 data/challenges/*
 !data/challenges/example/
-ansible
 TODO
 docker-compose.local.yml
 config.yaml
+coverage.out
+openapi.yaml

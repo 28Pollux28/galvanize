@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/models"
@@ -23,17 +24,21 @@ type ExpiryScheduler struct {
 	upcoming       []models.Deployment
 	rescheduleChan chan struct{}
 	wg             sync.WaitGroup // track ongoing terminations
-	idx            *challenge.ChallengeIndex
+	idx            challenge.ChallengeIndexer
+	deployer       ansible.Deployer
+	confProv       config.Provider
 	l              *zap.SugaredLogger
 }
 
-func NewExpiryScheduler(db *gorm.DB, idx *challenge.ChallengeIndex, logger *zap.SugaredLogger) *ExpiryScheduler {
+func NewExpiryScheduler(db *gorm.DB, idx challenge.ChallengeIndexer, deployer ansible.Deployer, confProv config.Provider, logger *zap.SugaredLogger) *ExpiryScheduler {
 	return &ExpiryScheduler{
 		db:             db,
 		mu:             sync.Mutex{},
 		lookahead:      1 * time.Minute,
 		rescheduleChan: make(chan struct{}, 1),
 		idx:            idx,
+		deployer:       deployer,
+		confProv:       confProv,
 		l:              logger,
 	}
 }
@@ -199,7 +204,7 @@ func (s *ExpiryScheduler) terminateDeployment(deploymentID uint) {
 
 func (s *ExpiryScheduler) performTermination(d *models.Deployment, tx *gorm.DB) error {
 
-	err := models.TerminateDeployment(tx, s.idx, config.Get(), d)
+	err := models.TerminateDeployment(tx, s.idx, s.deployer, s.confProv.GetConfig(), d)
 	if err != nil {
 		return fmt.Errorf("failed to terminate deployment: %w", err)
 	}

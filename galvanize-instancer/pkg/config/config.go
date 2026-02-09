@@ -8,6 +8,24 @@ import (
 	"go.uber.org/zap"
 )
 
+// Provider is the interface for obtaining configuration.
+// Consumers should depend on this interface rather than calling the global Get() directly.
+type Provider interface {
+	GetConfig() *Config
+}
+
+// GlobalProvider implements Provider using the package-level singleton.
+type GlobalProvider struct{}
+
+func (GlobalProvider) GetConfig() *Config { return Get() }
+
+// StaticProvider implements Provider with a fixed config value, useful for testing.
+type StaticProvider struct {
+	Cfg *Config
+}
+
+func (p *StaticProvider) GetConfig() *Config { return p.Cfg }
+
 type Config struct {
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Instancer InstancerConfig `mapstructure:"instancer"`

@@ -5,17 +5,34 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/internal/auth"
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/api"
-	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"github.com/28Pollux28/galvanize/pkg/utils"
-	results "github.com/apenella/go-ansible/v2/pkg/execute/result/json"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 )
+
+func (s *Server) ReloadChallenges(ctx echo.Context) error {
+	claims, err := auth.GetClaims(ctx)
+	if err != nil {
+		zap.S().Debugf("Failed to get claims: %v", err)
+		return ctx.JSON(401, api.Error{Message: utils.Ptr("Unauthorized")})
+	}
+	if claims.Role != "admin" {
+		return ctx.JSON(403, api.Error{Message: utils.Ptr("Forbidden - Admin access required")})
+	}
+
+	conf := s.confProv.GetConfig()
+	if err := s.challIdx.BuildIndex(conf.Instancer.ChallengeDir); err != nil {
+		zap.S().Errorf("Failed to reload challenges: %v", err)
+		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to reload challenges: %v", err))})
+	}
+
+	zap.S().Infof("Challenges reloaded successfully")
+	return ctx.NoContent(200)
+}
 
 func (s *Server) ConfigCheck(ctx echo.Context) error {
 	claims, err := auth.GetClaims(ctx)
@@ -99,8 +116,7 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 	}
 	_ = s.kmu.UnlockKey(id)
 
-	conf := config.Get()
-	executor, resultsBuff := ansible.PreparePlaybook(conf, "create", chall, "", chall.DeployParameters)
+	conf := s.confProv.GetConfig()
 	go func() {
 		defer s.wg.Done()
 		deployOps.Inc()
@@ -109,41 +125,13 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 			zap.S().Errorf("Failed to get deployment for update: %v", dbErr)
 			return
 		}
-		if err := executor.Execute(context.Background()); err != nil {
-			zap.S().Errorf("Ansible deploy failed: %v", err)
 
+		connInfo, err := s.deployer.Deploy(context.Background(), conf, chall, "")
+		if err != nil {
+			zap.S().Errorf("Deploy failed for admin challenge %s: %v", chall.Name, err)
 			dbErr = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
 			if dbErr != nil {
 				zap.S().Errorf("Saving deployment error status failed: %v", dbErr)
-				return
-			}
-			res, err := results.ParseJSONResultsStream(resultsBuff)
-			if err != nil {
-				zap.S().Errorf("Failed to parse Ansible results: %v", err)
-			}
-			zap.S().Errorf("Ansible deploy fail reason: %s", res.String())
-			return
-		}
-
-		containerInfos, err := ansible.ExtractContainerInfo(resultsBuff)
-		if err != nil {
-			zap.S().Errorf("Failed to extract container info: %v", err)
-		}
-
-		if len(containerInfos) == 0 {
-			zap.S().Errorf("No container info found in Ansible results for challenge %s", req.ChallengeName)
-			err := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "No container info found in Ansible results")
-			if err != nil {
-				zap.S().Errorf("Failed to save deployment error status: %v", err)
-			}
-			return
-		}
-		connInfo, err := ansible.GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost)
-		if err != nil {
-			zap.S().Errorf("Failed to build connection info: %v", err)
-			dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to build connection info: "+err.Error())
-			if dbErr != nil {
-				zap.S().Errorf("Failed to save deployment error status: %v", err)
 			}
 			return
 		}
@@ -198,10 +186,10 @@ func (s *Server) TerminateAdminInstance(ctx echo.Context) error {
 	}
 	tx.Commit()
 
-	conf := config.Get()
+	conf := s.confProv.GetConfig()
 	go func() {
 		defer s.wg.Done()
-		err = models.TerminateDeployment(s.db, s.challIdx, conf, deployment)
+		err = models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
 		if err != nil {
 			zap.S().Errorf("Failed to terminate instance: %v", err)
 		}
@@ -231,7 +219,7 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 	zap.S().Infof("Admin deploy-all request received for %d unique challenges", len(uniqueChallenges))
 	deployed := 0
 
-	conf := config.Get()
+	conf := s.confProv.GetConfig()
 	challenges := make([]api.ChallengeCategoryResponse, 0)
 
 	for _, chall := range uniqueChallenges {
@@ -253,7 +241,6 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 
 		deployed++
 		challenges = append(challenges, api.ChallengeCategoryResponse{})
-		executor, resultsBuff := ansible.PreparePlaybook(conf, "create", chall, "", chall.DeployParameters)
 
 		// Deploy in goroutine
 		go func(ch *challenge.Challenge) {
@@ -264,29 +251,11 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 				zap.S().Errorf("Failed to get deployment for %s: %v", ch.Name, dbErr)
 				return
 			}
-			if err := executor.Execute(context.Background()); err != nil {
-				zap.S().Errorf("Ansible deploy failed for %s: %v", ch.Name, err)
-				dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
-				if dbErr != nil {
-					zap.S().Errorf("Failed to save deployment error status for %s: %v", ch.Name, dbErr)
-				}
-				return
-			}
 
-			containerInfos, err := ansible.ExtractContainerInfo(resultsBuff)
-			if err != nil || len(containerInfos) == 0 {
-				zap.S().Errorf("Failed to extract container info for %s: %v", ch.Name, err)
-				dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to extract container info")
-				if dbErr != nil {
-					zap.S().Errorf("Failed to save deployment error status for %s: %v", ch.Name, dbErr)
-				}
-				return
-			}
-
-			connInfo, err := ansible.GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost)
+			connInfo, err := s.deployer.Deploy(context.Background(), conf, ch, "")
 			if err != nil {
-				zap.S().Errorf("Failed to build connection info for %s: %v", ch.Name, err)
-				dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to build connection info")
+				zap.S().Errorf("Deploy failed for %s: %v", ch.Name, err)
+				dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
 				if dbErr != nil {
 					zap.S().Errorf("Failed to save deployment error status for %s: %v", ch.Name, dbErr)
 				}
@@ -334,7 +303,7 @@ func (s *Server) TerminateAllAdminInstances(ctx echo.Context) error {
 	zap.S().Infof("Admin terminate-all request received for %d unique deployments", len(deployments))
 	terminated := 0
 
-	conf := config.Get()
+	conf := s.confProv.GetConfig()
 	challenges := make([]api.ChallengeCategoryResponse, 0)
 	for _, deployment := range deployments {
 		if deployment.Status == models.DeploymentStatusStopping || deployment.Status == models.DeploymentStatusStopped {
@@ -354,7 +323,7 @@ func (s *Server) TerminateAllAdminInstances(ctx echo.Context) error {
 		s.wg.Add(1)
 		go func(d models.Deployment) {
 			defer s.wg.Done()
-			err := models.TerminateDeployment(s.db, s.challIdx, conf, &d)
+			err := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, &d)
 			if err != nil {
 				zap.S().Errorf("Failed to terminate deployment %d: %v", d.ID, err)
 			}

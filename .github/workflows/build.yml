@@ -1,0 +1,62 @@
+name: Build
+
+on:
+  push:
+    branches: [master, main]
+    tags-ignore: ["v*"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: galvanize-instancer/go.mod
+          cache-dependency-path: galvanize-instancer/go.sum
+
+      - name: Download dependencies
+        run: make install
+
+      - name: Run tests
+        run: make test
+
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from constants.go
+        id: version
+        run: |
+          VERSION=$(grep -oP 'Version = "\K[0-9]+\.[0-9]+\.[0-9]+' galvanize-instancer/constants.go)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: galvanize-instancer/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}-B${{ github.run_number }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}-B${{ github.run_number }}

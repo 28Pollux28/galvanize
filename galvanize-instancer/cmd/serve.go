@@ -4,21 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
+	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/internal/auth"
+	"github.com/28Pollux28/galvanize/internal/challenge"
 	server "github.com/28Pollux28/galvanize/pkg"
 	"github.com/28Pollux28/galvanize/pkg/api"
 	"github.com/28Pollux28/galvanize/pkg/config"
+	"github.com/28Pollux28/galvanize/pkg/scheduler"
+	"github.com/28Pollux28/galvanize/pkg/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
 	echojwt "github.com/labstack/echo-jwt/v4"
@@ -29,16 +29,20 @@ import (
 )
 
 var serveCmd = &cobra.Command{
-	Use:   "serve [port]",
+	Use:   "serve",
 	Short: "Start the Poly Instancer server",
 	Long:  "Starts the Poly Instancer server to handle requests from CTFd for deploying challenges.",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		portStr := args[0]
+		portStr, _ := cmd.Flags().GetString("port")
 		if !validatePort(portStr) {
 			fmt.Fprintf(os.Stderr, "Invalid port: %s\n", portStr)
 			os.Exit(1)
 		}
+
+		// 1. Config provider (DI: all downstream consumers receive this)
+		confProv := config.GlobalProvider{}
+		cfg := confProv.GetConfig()
 
 		e := echo.New()
 		e.HideBanner = true
@@ -66,9 +70,8 @@ var serveCmd = &cobra.Command{
 		// 3. Prometheus
 		e.Use(echoprometheus.NewMiddleware("instancer")) // register middleware to gather metrics from requests
 		e.GET("/metrics", echoprometheus.NewHandler())
-		cfg := config.Get()
 
-		// JWT secret strictly from env (for security); allow POLY_JWT_SECRET env var
+		// JWT secret from env (for security);
 		jwtSecret := os.Getenv("JWT_SECRET")
 		if jwtSecret == "" {
 			jwtSecret = cfg.Auth.JWTSecret
@@ -76,17 +79,21 @@ var serveCmd = &cobra.Command{
 		if jwtSecret == "" {
 			zap.S().Fatal("JWT_SECRET (or JWT_SECRET) is required")
 		}
-		zap.S().Debugf("Using JWT secret: %s", jwtSecret)
+		cfg.Auth.JWTSecret = jwtSecret
+		zap.S().Debugf("Using JWT secret: %s", cfg.Auth.JWTSecret)
 
 		ansiblePath := os.Getenv("ANSIBLE_PATH")
 		if ansiblePath == "" {
 			ansiblePath = cfg.Instancer.AnsibleDir
 		}
 		if ansiblePath == "" {
-			log.Fatal("ANSIBLE_PATH is required")
+			zap.S().Fatal("ANSIBLE_PATH is required")
 		}
+		// Ensure the resolved value is propagated into the config so that
+		// PreparePlaybook (which reads conf.Instancer.AnsibleDir) uses it.
+		cfg.Instancer.AnsibleDir = ansiblePath
 
-		// 5. Auth
+		// 4. Auth
 		jwtConfig := echojwt.Config{
 			NewClaimsFunc: func(c echo.Context) jwt.Claims {
 				return new(auth.Claims)
@@ -97,14 +104,37 @@ var serveCmd = &cobra.Command{
 			},
 		}
 		e.Use(echojwt.WithConfig(jwtConfig))
-		err := registerSSHHosts()
-		if err != nil {
+
+		if err := utils.RegisterSSHHosts(cfg); err != nil {
 			zap.S().Fatalf("Failed to register SSH hosts: %v", err)
 		}
 
-		// 6. Server Init (Includes Metric Rehydration)
-		srv := server.NewServer(cfg.Instancer.DBPath)
+		// 5. Build dependencies
+		db, err := server.InitDB(cfg.Instancer.DBPath)
+		if err != nil {
+			zap.S().Fatalf("Failed to initialize database: %v", err)
+		}
+
+		challIdx, err := challenge.NewChallengeIndex(cfg.Instancer.ChallengeDir)
+		if err != nil {
+			zap.S().Fatalf("Failed to initialize challenge index: %v", err)
+		}
+
+		expirySched := scheduler.NewExpiryScheduler(db, challIdx, &ansible.AnsibleDeployer{}, confProv, zap.S().Named("ExpiryScheduler"))
+
+		// 6. Server Init via DI
+		srv := server.NewServerWithOpts(server.ServerOpts{
+			DB:               db,
+			ChallengeIndexer: challIdx,
+			ConfigProvider:   confProv,
+			Deployer:         &ansible.AnsibleDeployer{},
+			ExpiryScheduler:  expirySched,
+		})
 		api.RegisterHandlers(e, srv)
+
+		// 7. Start background services
+		schedCtx, schedCancel := context.WithCancel(context.Background())
+		srv.StartScheduler(schedCtx, expirySched)
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -117,13 +147,13 @@ var serveCmd = &cobra.Command{
 		// Wait for interrupt signal to gracefully shut down the server
 		<-ctx.Done()
 		zap.S().Info("Shutting down server...")
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		schedCancel()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 		defer cancel()
-		if err := e.Shutdown(ctx); err != nil {
+		if err := e.Shutdown(shutdownCtx); err != nil {
 			zap.S().Fatalf("Failed to shutdown server: %v", err)
 		}
-		err = srv.Wait(ctx)
-		if err != nil {
+		if err := srv.Wait(shutdownCtx); err != nil {
 			zap.S().Fatalf("Failed to wait for server shutdown: %v", err)
 		}
 	},
@@ -144,42 +174,6 @@ func validatePort(port string) bool {
 }
 
 func init() {
-	//rootCmd.AddCommand(serveCmd)
-}
-
-func registerSSHHosts() error {
-	// Parse SSH hosts from config and register them using ssh package
-	cfg := config.Get()
-	hosts := strings.Split(strings.Trim(cfg.Instancer.Ansible.Inventory, ","), ",")
-	home, _ := os.UserHomeDir()
-	knownHostsPath := filepath.Join(home, ".ssh/known_hosts")
-
-	for _, host := range hosts {
-		if host == "" {
-			continue
-		}
-		cmd := exec.Command("ssh-keygen", "-F", host, "-f", knownHostsPath)
-		err := cmd.Run()
-		if err == nil {
-			// Host already exists in known_hosts
-			zap.S().Infof("SSH host %s already registered", host)
-			continue
-		}
-
-		zap.S().Infof("Registering SSH host %s", host)
-		cmd = exec.Command("ssh-keyscan", "-H", host)
-		output, err := cmd.Output()
-		if err != nil {
-			return fmt.Errorf("keyscan %s: %w", host, err)
-		}
-
-		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-		if err != nil {
-			return err
-		}
-		f.Write(output)
-		f.Close()
-	}
-
-	return nil
+	serveCmd.Flags().StringP("port", "p", "8080", "Port to listen on")
+	rootCmd.AddCommand(serveCmd)
 }

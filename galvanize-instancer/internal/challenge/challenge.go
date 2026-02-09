@@ -7,9 +7,20 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/oasdiff/yaml3"
+	yaml "github.com/oasdiff/yaml3"
 	"go.uber.org/zap"
 )
+
+// ChallengeIndexer is the interface for looking up and managing challenges.
+// Consumers should depend on this interface rather than the concrete ChallengeIndex.
+type ChallengeIndexer interface {
+	Get(category, name string) (*Challenge, error)
+	GetAllUnique() []*Challenge
+	BuildIndex(baseDir string) error
+}
+
+// Compile-time check that ChallengeIndex implements ChallengeIndexer.
+var _ ChallengeIndexer = (*ChallengeIndex)(nil)
 
 type ChallengeIndex struct {
 	mu     sync.RWMutex

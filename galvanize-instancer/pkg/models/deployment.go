@@ -10,7 +10,6 @@ import (
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/utils"
-	"github.com/apenella/go-ansible/v2/pkg/execute/result/json"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -157,7 +156,7 @@ func ExtendDeploymentExpiration(db *gorm.DB, deployment *Deployment, extension, 
 	return db.Save(&deployment).Error
 }
 
-func TerminateDeployment(db *gorm.DB, idx *challenge.ChallengeIndex, conf *config.Config, deployment *Deployment) error {
+func TerminateDeployment(db *gorm.DB, idx challenge.ChallengeIndexer, deployer ansible.Deployer, conf *config.Config, deployment *Deployment) error {
 	challengeName := deployment.ChallengeName
 	category := deployment.Category
 	teamID := deployment.TeamID
@@ -170,21 +169,14 @@ func TerminateDeployment(db *gorm.DB, idx *challenge.ChallengeIndex, conf *confi
 		teamID = utils.Ptr("")
 	}
 
-	executor, resultsBuff := ansible.PreparePlaybook(conf, "delete", chall, *teamID, chall.DeployParameters)
-
-	if err := executor.Execute(context.Background()); err != nil {
+	if err := deployer.Terminate(context.Background(), conf, chall, *teamID); err != nil {
 		zap.S().Errorf("Ansible undeploy failed: %v", err)
 		dbErr := UpdateDeploymentStatus(db, deployment, DeploymentStatusError, "", err.Error())
 		if dbErr != nil {
 			zap.S().Errorf("Saving undeployment error status failed: %v", dbErr)
 			return dbErr
 		}
-		res, err2 := json.ParseJSONResultsStream(resultsBuff)
-		if err2 != nil {
-			zap.S().Errorf("Failed to parse Ansible results: %v", err2)
-		}
-		zap.S().Errorf("Ansible undeploy fail reason: %s", res.String())
-		return fmt.Errorf("ansible undeploy failed: %s", res.String())
+		return fmt.Errorf("ansible undeploy failed: %w", err)
 	}
 
 	err = DeleteDeployment(db, deployment)
@@ -197,7 +189,6 @@ func TerminateDeployment(db *gorm.DB, idx *challenge.ChallengeIndex, conf *confi
 		return nil
 	}
 	zap.S().Debugf("Termination of challenge %s for team %p completed successfully.", challengeName, teamID)
-	//pkg.activeInstancesPerTeam.WithLabelValues(teamID).Dec()
 
 	return nil
 }
