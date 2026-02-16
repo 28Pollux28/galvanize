@@ -19,6 +19,7 @@ import (
 	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/scheduler"
 	"github.com/28Pollux28/galvanize/pkg/utils"
+	"github.com/28Pollux28/galvanize/pkg/worker"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
 	echojwt "github.com/labstack/echo-jwt/v4"
@@ -120,21 +121,62 @@ var serveCmd = &cobra.Command{
 			zap.S().Fatalf("Failed to initialize challenge index: %v", err)
 		}
 
-		expirySched := scheduler.NewExpiryScheduler(db, challIdx, &ansible.AnsibleDeployer{}, confProv, zap.S().Named("ExpiryScheduler"))
+		// 6. Initialize Redis job queue and worker pool (if configured)
+		var jobQueue *worker.Queue
+		var workerPool *worker.Pool
 
-		// 6. Server Init via DI
+		if cfg.Instancer.Redis.Addr != "" {
+			var queueErr error
+			jobQueue, queueErr = worker.NewQueue(worker.QueueConfig{
+				Addr:     cfg.Instancer.Redis.Addr,
+				Password: cfg.Instancer.Redis.Password,
+				DB:       cfg.Instancer.Redis.DB,
+			}, zap.S().Named("JobQueue"))
+			if queueErr != nil {
+				zap.S().Fatalf("Failed to connect to Redis: %v", queueErr)
+			}
+
+			numWorkers := cfg.Instancer.NumWorkers
+			if numWorkers <= 0 {
+				numWorkers = 10
+			}
+
+			workerPool = worker.NewPool(worker.PoolConfig{
+				NumWorkers: numWorkers,
+				Queue:      jobQueue,
+				DB:         db,
+				ChallIdx:   challIdx,
+				ConfProv:   confProv,
+				Deployer:   &ansible.AnsibleDeployer{},
+				Logger:     zap.S().Named("WorkerPool"),
+			})
+			zap.S().Infof("Redis job queue enabled with %d workers", numWorkers)
+		} else {
+			zap.S().Info("Redis not configured, using direct goroutines for deployments")
+		}
+
+		// Initialize scheduler with job queue (can be nil if Redis not configured)
+		expirySched := scheduler.NewExpiryScheduler(db, jobQueue, zap.S().Named("ExpiryScheduler"))
+
+		// 7. Server Init via DI
 		srv := server.NewServerWithOpts(server.ServerOpts{
 			DB:               db,
 			ChallengeIndexer: challIdx,
 			ConfigProvider:   confProv,
 			Deployer:         &ansible.AnsibleDeployer{},
 			ExpiryScheduler:  expirySched,
+			JobQueue:         jobQueue,
 		})
 		api.RegisterHandlers(e, srv)
 
-		// 7. Start background services
+		// 8. Start background services
 		schedCtx, schedCancel := context.WithCancel(context.Background())
 		srv.StartScheduler(schedCtx, expirySched)
+
+		// Start worker pool if configured
+		if workerPool != nil {
+			workerPool.Start(schedCtx)
+		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -148,6 +190,12 @@ var serveCmd = &cobra.Command{
 		<-ctx.Done()
 		zap.S().Info("Shutting down server...")
 		schedCancel()
+
+		// Stop worker pool first (it will finish current jobs)
+		if workerPool != nil {
+			workerPool.Stop()
+		}
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 		defer cancel()
 		if err := e.Shutdown(shutdownCtx); err != nil {
@@ -155,6 +203,13 @@ var serveCmd = &cobra.Command{
 		}
 		if err := srv.Wait(shutdownCtx); err != nil {
 			zap.S().Fatalf("Failed to wait for server shutdown: %v", err)
+		}
+
+		// Close Redis connection
+		if jobQueue != nil {
+			if err := jobQueue.Close(); err != nil {
+				zap.S().Warnf("Failed to close Redis connection: %v", err)
+			}
 		}
 	},
 }

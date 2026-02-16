@@ -1,5 +1,17 @@
 name: Galvanize
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: galvanize-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   instancer:
     build:
       context: .
@@ -7,11 +19,14 @@ services:
     container_name: galvanize-instancer
     stop_grace_period: 1m
     stop_signal: SIGINT
+    depends_on:
+      redis:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       - "DEVELOPMENT=false"
-    entrypoint:
+    command:
         - "./galvanize"
         - "serve"
         - "--port"
@@ -28,3 +43,6 @@ services:
       timeout: 10s
       retries: 5
     restart: unless-stopped
+
+volumes:
+  redis_data:

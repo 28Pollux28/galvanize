@@ -10,6 +10,12 @@ instancer:
   deployment_ttl_extension: "30m" # Time to extend deployment TTL with on extension request (default: 30m)
   deployment_extension_window: "30m" # Time window to extend deployments before expiration (default: 30m)
   deployment_max_extensions: 3 # Maximum number of extensions allowed per deployment (-1 for unlimited) (default: 3)
+  num_workers: 10 # Number of Ansible workers for processing jobs (default: 10)
+  max_concurrent_ansible: 5 # Fallback: max concurrent Ansible when Redis not configured (default: 5)
+  redis:
+    addr: "localhost:6379" # Redis address for job queue (leave empty to disable queue and use direct goroutines)
+    password: "" # Redis password (optional)
+    db: 0 # Redis database number (default: 0)
   ansible:
     inventory: "your-server-ip," # Comma at the end for single host. Use IP or hostname of the target hosts
     private_key: "/home/galvanize/.ssh/ansible-ssh" # Path to SSH private key (replace this if you edit it in the docker compose)

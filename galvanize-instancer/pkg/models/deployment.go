@@ -92,6 +92,19 @@ func GetAllUniqueDeployments(db *gorm.DB) ([]Deployment, error) {
 	return deployments, result.Error
 }
 
+// GetDeploymentByID retrieves a deployment by its primary key ID
+func GetDeploymentByID(db *gorm.DB, id uint) (*Deployment, error) {
+	var deployment Deployment
+	result := db.First(&deployment, id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, result.Error
+	}
+	return &deployment, nil
+}
+
 func CreateDeployment(db *gorm.DB, challengeName, teamID, category string, defaultDeploymentTTL time.Duration, maxExtensions int) (*Deployment, error) {
 	deployment := &Deployment{
 		ChallengeName:     challengeName,

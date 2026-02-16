@@ -163,7 +163,7 @@ func newTestServerWithMock(t *testing.T, deployer *mockDeployer, indexer challen
 	require.NoError(t, err)
 
 	confProv := &config.StaticProvider{Cfg: cfg}
-	expirySched := scheduler.NewExpiryScheduler(db, indexer, deployer, confProv, zap.NewNop().Sugar())
+	expirySched := scheduler.NewExpiryScheduler(db, nil, zap.NewNop().Sugar())
 
 	return NewServerWithOpts(ServerOpts{
 		DB:               db,

@@ -46,6 +46,15 @@ type InstancerConfig struct {
 	DeploymentTTLExtension    time.Duration          `mapstructure:"deployment_ttl_extension,omitempty"`    // Duration to extend deployment TTL
 	DeploymentMaxExtensions   int                    `mapstructure:"deployment_max_extensions,omitempty"`   // Maximum number of TTL extensions allowed
 	DeploymentExtensionWindow time.Duration          `mapstructure:"deployment_extension_window,omitempty"` // Time window before expiration when extension is allowed
+	MaxConcurrentAnsible      int                    `mapstructure:"max_concurrent_ansible,omitempty"`      // Maximum concurrent Ansible executions (default: 5) - deprecated, use NumWorkers
+	Redis                     RedisConfig            `mapstructure:"redis"`                                 // Redis configuration for job queue
+	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                 // Number of Ansible workers (default: 10)
+}
+
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`     // Redis address (e.g., "localhost:6379")
+	Password string `mapstructure:"password"` // Redis password (optional)
+	DB       int    `mapstructure:"db"`       // Redis database number (default: 0)
 }
 
 type AnsibleConfig struct {

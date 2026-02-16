@@ -3,14 +3,11 @@ package scheduler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/28Pollux28/galvanize/internal/ansible"
-	"github.com/28Pollux28/galvanize/internal/challenge"
-	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/models"
+	"github.com/28Pollux28/galvanize/pkg/worker"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,21 +21,17 @@ type ExpiryScheduler struct {
 	upcoming       []models.Deployment
 	rescheduleChan chan struct{}
 	wg             sync.WaitGroup // track ongoing terminations
-	idx            challenge.ChallengeIndexer
-	deployer       ansible.Deployer
-	confProv       config.Provider
+	jobQueue       *worker.Queue
 	l              *zap.SugaredLogger
 }
 
-func NewExpiryScheduler(db *gorm.DB, idx challenge.ChallengeIndexer, deployer ansible.Deployer, confProv config.Provider, logger *zap.SugaredLogger) *ExpiryScheduler {
+func NewExpiryScheduler(db *gorm.DB, jobQueue *worker.Queue, logger *zap.SugaredLogger) *ExpiryScheduler {
 	return &ExpiryScheduler{
 		db:             db,
 		mu:             sync.Mutex{},
 		lookahead:      1 * time.Minute,
 		rescheduleChan: make(chan struct{}, 1),
-		idx:            idx,
-		deployer:       deployer,
-		confProv:       confProv,
+		jobQueue:       jobQueue,
 		l:              logger,
 	}
 }
@@ -164,52 +157,58 @@ func (s *ExpiryScheduler) removeFromUpcoming(deploymentID uint) {
 }
 
 func (s *ExpiryScheduler) terminateDeployment(deploymentID uint) {
+	var deployment models.Deployment
+
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		var d models.Deployment
 		s.l.Debugf("Acquiring lock for deployment %d", deploymentID)
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&d, deploymentID).Error; err != nil {
+			First(&deployment, deploymentID).Error; err != nil {
 			return err
 		}
 
-		if time.Now().Before(*d.ExpiresAt) {
-			s.l.Errorf("deployment %d was extended, skipping", deploymentID)
+		if time.Now().Before(*deployment.ExpiresAt) {
+			s.l.Debugf("deployment %d was extended, skipping", deploymentID)
 			return errors.New("deployment was extended")
 		}
 
-		if d.Status != models.DeploymentStatusRunning {
+		if deployment.Status != models.DeploymentStatusRunning {
 			return nil
 		}
 		s.l.Debugf("terminating deployment %d", deploymentID)
-		err := models.UpdateDeploymentStatus(tx, &d, models.DeploymentStatusStopping, "", "")
+		err := models.UpdateDeploymentStatus(tx, &deployment, models.DeploymentStatusStopping, "", "")
 		if err != nil {
-			return fmt.Errorf("failed to update deployment status to stopping: %w", err)
+			return err
 		}
 
 		return nil
 	})
 	if err != nil {
-		s.l.Errorf("failed to terminate deployment %d: %v", deploymentID, err)
-	}
-
-	var d models.Deployment
-	if err := s.db.First(&d, deploymentID).Error; err != nil {
-		s.l.Errorf("failed to fetch deployment %d after transaction: %v", deploymentID, err)
+		s.l.Errorf("failed to update deployment %d status: %v", deploymentID, err)
 		return
 	}
-	if err := s.performTermination(&d, s.db); err != nil {
-		s.l.Errorf("failed to perform termination for deployment %d: %v", deploymentID, err)
+
+	// If job queue is available, submit termination job
+	if s.jobQueue != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		teamID := ""
+		if deployment.TeamID != nil {
+			teamID = *deployment.TeamID
+		}
+
+		job := worker.NewTerminateJob(deployment.Category, deployment.ChallengeName, teamID, deployment.ID)
+		if err := s.jobQueue.Enqueue(ctx, job); err != nil {
+			s.l.Errorf("failed to enqueue termination job for deployment %d: %v", deploymentID, err)
+			// Mark deployment as error since we couldn't submit the job
+			_ = models.UpdateDeploymentStatus(s.db, &deployment, models.DeploymentStatusError, "", "failed to enqueue termination job: "+err.Error())
+		} else {
+			s.l.Infof("submitted termination job for deployment %d (team: %s, challenge: %s/%s)", deploymentID, teamID, deployment.Category, deployment.ChallengeName)
+		}
+	} else {
+		s.l.Warnf("no job queue available, cannot terminate deployment %d", deploymentID)
+		_ = models.UpdateDeploymentStatus(s.db, &deployment, models.DeploymentStatusError, "", "no job queue configured for termination")
 	}
-}
-
-func (s *ExpiryScheduler) performTermination(d *models.Deployment, tx *gorm.DB) error {
-
-	err := models.TerminateDeployment(tx, s.idx, s.deployer, s.confProv.GetConfig(), d)
-	if err != nil {
-		return fmt.Errorf("failed to terminate deployment: %w", err)
-	}
-
-	return nil
 }
 
 func (s *ExpiryScheduler) triggerReschedule() {

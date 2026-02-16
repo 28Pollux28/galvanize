@@ -14,6 +14,7 @@ import (
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"github.com/28Pollux28/galvanize/pkg/scheduler"
 	"github.com/28Pollux28/galvanize/pkg/utils"
+	"github.com/28Pollux28/galvanize/pkg/worker"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -29,6 +30,7 @@ type Server struct {
 	expirySched *scheduler.ExpiryScheduler
 	kmu         keymutex.KeyMutex
 	wg          sync.WaitGroup
+	jobQueue    *worker.Queue // Redis job queue (optional, nil means use direct goroutines)
 }
 
 // ServerOpts holds the dependencies needed to construct a Server.
@@ -39,6 +41,7 @@ type ServerOpts struct {
 	Deployer         ansible.Deployer
 	ExpiryScheduler  *scheduler.ExpiryScheduler
 	KeyMutex         keymutex.KeyMutex
+	JobQueue         *worker.Queue // Optional: if provided, jobs are queued to Redis
 }
 
 var _ api.ServerInterface = (*Server)(nil)
@@ -62,6 +65,7 @@ func NewServerWithOpts(opts ServerOpts) *Server {
 		deployer:    deployer,
 		expirySched: opts.ExpiryScheduler,
 		kmu:         kmu,
+		jobQueue:    opts.JobQueue,
 	}
 }
 
@@ -163,38 +167,46 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	}
 	conf := s.confProv.GetConfig()
 
-	s.wg.Add(1)
-	_, err = models.CreateDeployment(s.db, chall.Name, claims.TeamID, chall.Category, conf.Instancer.DeploymentTTL, conf.Instancer.DeploymentMaxExtensions)
+	deployment, err := models.CreateDeployment(s.db, chall.Name, claims.TeamID, chall.Category, conf.Instancer.DeploymentTTL, conf.Instancer.DeploymentMaxExtensions)
 	if err != nil {
 		_ = s.kmu.UnlockKey(id)
-		s.wg.Done()
 		zap.S().Errorf("Failed to create deployment record: %v", err)
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to create deployment record: %v", err))}) //TODO notify admin
 	}
 	_ = s.kmu.UnlockKey(id)
 
+	// If we have a job queue, enqueue the deploy job
+	if s.jobQueue != nil {
+		job := worker.NewDeployJob(chall.Category, chall.Name, claims.TeamID, deployment.ID)
+		if err := s.jobQueue.Enqueue(ctx.Request().Context(), job); err != nil {
+			zap.S().Errorf("Failed to enqueue deploy job: %v", err)
+			_ = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to queue deployment")
+			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug("Failed to queue deployment")})
+		}
+		zap.S().Infof("Deploy job queued for challenge %s team %s", chall.Name, claims.TeamID)
+		deployOps.Inc()
+		return ctx.NoContent(202)
+	}
+
+	// Fallback to direct goroutine if no queue configured
+	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		deployOps.Inc()
-		deployment, dbErr := models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
-		if dbErr != nil {
-			zap.S().Errorf("Failed to get deployment for error update: %v", dbErr)
-			return
-		}
 
-		connInfo, err := s.deployer.Deploy(context.Background(), conf, chall, claims.TeamID)
-		if err != nil {
-			zap.S().Errorf("Deploy failed for challenge %s team %s: %v", chall.Name, claims.TeamID, err)
-			dbErr = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
+		connInfo, deployErr := s.deployer.Deploy(context.Background(), conf, chall, claims.TeamID)
+		if deployErr != nil {
+			zap.S().Errorf("Deploy failed for challenge %s team %s: %v", chall.Name, claims.TeamID, deployErr)
+			dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", deployErr.Error())
 			if dbErr != nil {
 				zap.S().Errorf("Saving deployment error status failed: %v", dbErr)
 			}
 			return
 		}
 
-		err = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusRunning, connInfo, "")
-		if err != nil {
-			zap.S().Errorf("Failed to save deployment running status: %v", err)
+		updateErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusRunning, connInfo, "")
+		if updateErr != nil {
+			zap.S().Errorf("Failed to save deployment running status: %v", updateErr)
 			return
 		}
 		zap.S().Infof("Deployment of challenge %s for team %s completed successfully.", chall.Name, claims.TeamID)
@@ -209,7 +221,6 @@ func (s *Server) GetInstanceStatus(ctx echo.Context) error {
 	if err != nil {
 		return ctx.JSON(401, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
-	zap.S().Debugf("Status request received for challenge %s for team %s", claims.ChallengeName, claims.TeamID)
 
 	chall, err := s.challIdx.Get(claims.Category, claims.ChallengeName)
 	if err != nil {
@@ -217,8 +228,10 @@ func (s *Server) GetInstanceStatus(ctx echo.Context) error {
 	}
 	var deployment *models.Deployment
 	if chall.Unique == true {
+		zap.S().Debugf("Status request received for challenge %s", chall.Name)
 		deployment, err = models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
 	} else {
+		zap.S().Debugf("Status request received for challenge %s for team %s", claims.ChallengeName, claims.TeamID)
 		deployment, err = models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
 	}
 	if err != nil {
@@ -314,12 +327,11 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 		unauthorizedDeploymentsRequestsPerTeam.WithLabelValues(claims.TeamID).Inc()
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
-	s.wg.Add(1)
+
 	tx := s.db.Begin()
 	deployment, err := models.GetDeployment(tx, claims.Category, claims.ChallengeName, claims.TeamID, true)
 	if err != nil {
 		tx.Rollback()
-		s.wg.Done()
 		if errors.Is(err, models.ErrNotFound) {
 			return ctx.JSON(404, api.Error{Message: utils.Ptr("No deployment found for this team and challenge")})
 		}
@@ -327,23 +339,41 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 	}
 	if deployment.Status == models.DeploymentStatusStopping {
 		tx.Rollback()
-		s.wg.Done()
 		return ctx.JSON(400, api.Error{Message: utils.Ptr("Termination already in progress")})
 	}
 	err = models.UpdateDeploymentStatus(tx, deployment, models.DeploymentStatusStopping, "", "")
 	if err != nil {
 		tx.Rollback()
-		s.wg.Done()
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to update deployment status: %v", err))})
 	}
 	tx.Commit()
 
 	conf := s.confProv.GetConfig()
+
+	// If we have a job queue, enqueue the terminate job
+	if s.jobQueue != nil {
+		chall, challErr := s.challIdx.Get(claims.Category, claims.ChallengeName)
+		if challErr != nil {
+			zap.S().Errorf("Failed to get challenge for terminate: %v", challErr)
+			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug("Failed to get challenge info")})
+		}
+		job := worker.NewTerminateJob(chall.Category, chall.Name, claims.TeamID, deployment.ID)
+		if err := s.jobQueue.Enqueue(ctx.Request().Context(), job); err != nil {
+			zap.S().Errorf("Failed to enqueue terminate job: %v", err)
+			_ = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to queue termination")
+			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug("Failed to queue termination")})
+		}
+		zap.S().Infof("Terminate job queued for challenge %s team %s", claims.ChallengeName, claims.TeamID)
+		return ctx.NoContent(200)
+	}
+
+	// Fallback to direct goroutine if no queue configured
+	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		err = models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
-		if err != nil {
-			zap.S().Errorf("Failed to terminate instance: %v", err)
+		terminateErr := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
+		if terminateErr != nil {
+			zap.S().Errorf("Failed to terminate instance: %v", terminateErr)
 		}
 	}()
 

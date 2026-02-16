@@ -9,8 +9,8 @@ LABEL authors="28Pollux28"
 
 RUN useradd -ms /bin/bash galvanize
 
-# Install curl to allow health checks and ansible
-RUN apt-get update && apt-get install -y curl pipx ssh-client \
+# Install curl to allow health checks, ansible, and tini for zombie process reaping
+RUN apt-get update && apt-get install -y curl pipx ssh-client tini \
     && rm -rf /var/lib/apt/lists/* \
     && pipx ensurepath --global \
     && pipx install --include-deps --global ansible
@@ -28,4 +28,6 @@ USER galvanize
 
 EXPOSE 8080
 
-CMD ["./galvanize serve 8080 -c config.yaml"]
+# Use tini as entrypoint to properly reap zombie SSH processes from Ansible
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["./galvanize", "serve", "8080", "-c", "config.yaml"]
