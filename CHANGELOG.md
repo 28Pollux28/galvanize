@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+
+## v0.3.0 (2026-02-17)
 - Add ansible worker and redis queue
 - Add loadtest package to stress test restserver
 
