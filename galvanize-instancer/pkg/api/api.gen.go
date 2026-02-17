@@ -21,6 +21,26 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for DeploymentInfoStatus.
+const (
+	DeploymentInfoStatusRunning  DeploymentInfoStatus = "running"
+	DeploymentInfoStatusStarting DeploymentInfoStatus = "starting"
+	DeploymentInfoStatusStopping DeploymentInfoStatus = "stopping"
+)
+
+// Defines values for ErrorDeploymentInfoPreviousStatus.
+const (
+	ErrorDeploymentInfoPreviousStatusStarting ErrorDeploymentInfoPreviousStatus = "starting"
+	ErrorDeploymentInfoPreviousStatusStopping ErrorDeploymentInfoPreviousStatus = "stopping"
+)
+
+// Defines values for RetryDeploymentRequestAction.
+const (
+	Delete    RetryDeploymentRequestAction = "delete"
+	Deploy    RetryDeploymentRequestAction = "deploy"
+	Terminate RetryDeploymentRequestAction = "terminate"
+)
+
 // Defines values for StatusResponseStatus.
 const (
 	StatusResponseStatusError    StatusResponseStatus = "error"
@@ -60,10 +80,69 @@ type DeployRequest struct {
 	ChallengeName string `json:"challenge_name"`
 }
 
+// DeploymentInfo defines model for DeploymentInfo.
+type DeploymentInfo struct {
+	Category       string  `json:"category"`
+	ChallengeName  string  `json:"challenge_name"`
+	ConnectionInfo *string `json:"connection_info,omitempty"`
+
+	// DeployedDurationSeconds Duration in seconds since deployment started.
+	DeployedDurationSeconds int `json:"deployed_duration_seconds"`
+
+	// DeployedSince The time the deployment was created.
+	DeployedSince time.Time `json:"deployed_since"`
+
+	// ExpiresAt When the deployment expires. Null for unique deployments.
+	ExpiresAt *time.Time           `json:"expires_at,omitempty"`
+	Status    DeploymentInfoStatus `json:"status"`
+}
+
+// DeploymentInfoStatus defines model for DeploymentInfo.Status.
+type DeploymentInfoStatus string
+
 // Error defines model for Error.
 type Error struct {
 	Message *string `json:"message,omitempty"`
 }
+
+// ErrorDeploymentInfo defines model for ErrorDeploymentInfo.
+type ErrorDeploymentInfo struct {
+	Category      string `json:"category"`
+	ChallengeName string `json:"challenge_name"`
+
+	// CreatedAt When the deployment was created.
+	CreatedAt time.Time `json:"created_at"`
+
+	// ErrorMessage The error message from the failed deployment.
+	ErrorMessage string `json:"error_message"`
+
+	// Id The deployment ID.
+	Id int `json:"id"`
+
+	// PreviousStatus The status before the deployment transitioned to error. Indicates whether a deploy or terminate action was in progress.
+	PreviousStatus ErrorDeploymentInfoPreviousStatus `json:"previous_status"`
+
+	// TeamId The team identifier. Empty string for unique/admin deployments.
+	TeamId string `json:"team_id"`
+
+	// UpdatedAt When the deployment was last updated.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ErrorDeploymentInfoPreviousStatus The status before the deployment transitioned to error. Indicates whether a deploy or terminate action was in progress.
+type ErrorDeploymentInfoPreviousStatus string
+
+// RetryDeploymentRequest defines model for RetryDeploymentRequest.
+type RetryDeploymentRequest struct {
+	// Action The action to perform - 'deploy' to retry deployment, 'terminate' to terminate the failed deployment, 'delete' to remove the deployment from the database. If not provided, the action will be inferred from the previous status (deploy or terminate only).
+	Action *RetryDeploymentRequestAction `json:"action,omitempty"`
+
+	// DeploymentId The ID of the deployment to retry.
+	DeploymentId int `json:"deployment_id"`
+}
+
+// RetryDeploymentRequestAction The action to perform - 'deploy' to retry deployment, 'terminate' to terminate the failed deployment, 'delete' to remove the deployment from the database. If not provided, the action will be inferred from the previous status (deploy or terminate only).
+type RetryDeploymentRequestAction string
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
@@ -84,8 +163,19 @@ type StatusResponse struct {
 // StatusResponseStatus defines model for StatusResponse.Status.
 type StatusResponseStatus string
 
+// TeamDeploymentsResponse defines model for TeamDeploymentsResponse.
+type TeamDeploymentsResponse struct {
+	Deployments []DeploymentInfo `json:"deployments"`
+
+	// TeamId The team identifier. Empty string for unique/admin deployments.
+	TeamId string `json:"team_id"`
+}
+
 // DeployAdminInstanceJSONRequestBody defines body for DeployAdminInstance for application/json ContentType.
 type DeployAdminInstanceJSONRequestBody = AdminDeployRequest
+
+// RetryDeploymentJSONRequestBody defines body for RetryDeployment for application/json ContentType.
+type RetryDeploymentJSONRequestBody = RetryDeploymentRequest
 
 // TerminateAdminInstanceJSONRequestBody defines body for TerminateAdminInstance for application/json ContentType.
 type TerminateAdminInstanceJSONRequestBody = AdminDeployRequest
@@ -107,12 +197,21 @@ type ServerInterface interface {
 	// Deploy all unique challenges (admin only)
 	// (POST /admin/deploy-all)
 	DeployAllAdminInstances(ctx echo.Context) error
+	// List all deployments in error status (admin only)
+	// (GET /admin/error-deployments)
+	ListErrorDeployments(ctx echo.Context) error
 	// List all unique challenges
 	// (GET /admin/list-unique-challs)
 	ListUniqueChallenges(ctx echo.Context) error
 	// Reload challenges index
 	// (POST /admin/reload-challs)
 	ReloadChallenges(ctx echo.Context) error
+	// Retry a failed deployment (admin only)
+	// (POST /admin/retry-deployment)
+	RetryDeployment(ctx echo.Context) error
+	// List all deployments grouped by team (admin only)
+	// (GET /admin/team-deployments)
+	ListTeamDeployments(ctx echo.Context) error
 	// Terminate a unique challenge (admin only)
 	// (POST /admin/terminate)
 	TerminateAdminInstance(ctx echo.Context) error
@@ -174,6 +273,17 @@ func (w *ServerInterfaceWrapper) DeployAllAdminInstances(ctx echo.Context) error
 	return err
 }
 
+// ListErrorDeployments converts echo context to params.
+func (w *ServerInterfaceWrapper) ListErrorDeployments(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListErrorDeployments(ctx)
+	return err
+}
+
 // ListUniqueChallenges converts echo context to params.
 func (w *ServerInterfaceWrapper) ListUniqueChallenges(ctx echo.Context) error {
 	var err error
@@ -193,6 +303,28 @@ func (w *ServerInterfaceWrapper) ReloadChallenges(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ReloadChallenges(ctx)
+	return err
+}
+
+// RetryDeployment converts echo context to params.
+func (w *ServerInterfaceWrapper) RetryDeployment(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RetryDeployment(ctx)
+	return err
+}
+
+// ListTeamDeployments converts echo context to params.
+func (w *ServerInterfaceWrapper) ListTeamDeployments(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListTeamDeployments(ctx)
 	return err
 }
 
@@ -302,8 +434,11 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.POST(baseURL+"/admin/config-check", wrapper.ConfigCheck)
 	router.POST(baseURL+"/admin/deploy", wrapper.DeployAdminInstance)
 	router.POST(baseURL+"/admin/deploy-all", wrapper.DeployAllAdminInstances)
+	router.GET(baseURL+"/admin/error-deployments", wrapper.ListErrorDeployments)
 	router.GET(baseURL+"/admin/list-unique-challs", wrapper.ListUniqueChallenges)
 	router.POST(baseURL+"/admin/reload-challs", wrapper.ReloadChallenges)
+	router.POST(baseURL+"/admin/retry-deployment", wrapper.RetryDeployment)
+	router.GET(baseURL+"/admin/team-deployments", wrapper.ListTeamDeployments)
 	router.POST(baseURL+"/admin/terminate", wrapper.TerminateAdminInstance)
 	router.POST(baseURL+"/admin/terminate-all", wrapper.TerminateAllAdminInstances)
 	router.POST(baseURL+"/deploy", wrapper.DeployInstance)
@@ -317,29 +452,41 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xY32/bNhD+Vw7cHlrAv9pkD/Nb6rRdhmEb2hQF1gYBI50sNhSpkqc0auH/fSApWXJE",
-	"5wfmtE2xN9k6Hu++7+PdiV9YootSK1Rk2fwLs0mOBfePB2kh1CGWUtev8GOFlty/pdElGhLobRJOuNSm",
-	"ds8p2sSIkoRWbM6Oc4T2LegMyP3OuZSolgikIfWeJ2zEqC6RzZklI9SSrUZsbXeqeIFx3+7N3fyuRszg",
-	"x0oYTNn8XRf6YL+T9VJ99gETciE9q+T5XyUa7kJ4hbbUymIEj9aT/yUIC//ws8GMzdlP0w7saYP0dNEu",
-	"WTQBrb2v1nFwY3i9gYw9TXSlPCONjVCESzTOqkBr+RJ7L7dg0BpGHPf/iiKyPe5rVXILsnfJ2//6DTg8",
-	"N0abYf7XKmXg5DVxquw1PGulMHFJngqV6SjdeFmKcIpOSQRwMm0KTmzOUk449v+OYgsJle2vuwKqKBDS",
-	"KvgG5EkO6yXA09TCI5wsJyN4z/ZmxXvmHp7k79njybW72VOJGQ23+7MqztA4BjtTcKaQaQOUC9swWaCi",
-	"CYyfgMigUlIUgjDt7dk7t9bj6/ZCVRWOZFMp5SJy73RZto/cUHhET+tJJIFKiY9VBKa3OVKOTYTCAodg",
-	"2YsWtAGlqRfjmdYSuYqpwoWNSWUE1a9dRQtKOENu0BxUlHe/XrQ0//722GXhrZ1z/7bbLCcq2co5bkW0",
-	"mcHB30ce4xCwUEtYHL/ozpCFyro/D5QVZ9JLSZB0jl9yecGV+IxwpCxxlfhdL9DY4Hg22ZvMHHa6RMVL",
-	"weZsbzKb7LERKznlPrEpd11xmmiVieU4yTE59+dAh+qi2xZxlLI5W3irhTdyhzecG+/n6Ww2zGyhi6JS",
-	"IgkS/iQoh39qlYCtkgStzSrpotufPRkufaN4Rbk24jOmwWhvaPRCmzORpqhgDL67A/eOYV1XViP2Syyy",
-	"I0VoFJdg0VyggaC7Pvls/m6T9ncnq5MRs1VRcFdfmYcBkniK3lWDbeB1O6qhpPv4Wx5ZKI1o6ZlO66YU",
-	"EYb+yMtSNhtOP1iXTjvm3NSaIxPQarMMk6lwNaD26RDAw+50NZF67Etq6YqCfsGlSKHZG6bwRp0r/UnB",
-	"uvfC0eFXkMT+7NdrM+LSIE9rwEthyfZEtBMWnjdaW412L8qQRFcEu078yIsRtJL146E6x1zKGxUq5YZI",
-	"LYsLZScgxefTCGjOsF/rfTNpaX6QhaXlUMoBi3YrjVJYGgfzsTf3jCwxwuYfwtIbb7noJuJ4Ob81lbv+",
-	"Mhjy7KJ208kAkgfMtM8pynOfWoNS87THantIN+N55c36WhEqxUvIjC4gFfYcuEqhKt1Q6qd0oQos3NeA",
-	"t2OjKzIJ/m6USDSIH6LBbwG0Tw2hKYTihNtr53Fr8j03+AiAbdxurPmqdO7P9iNfJ7pf4zNdqXulfk3a",
-	"XTrpWgzXN9NOEDf309k36qfUJ//BN9Qem7fsqbcb2e/5MP9Ag/rtxm2hoDR6adBaj4dEwgc5fHe1QrQS",
-	"8bLyNyvpdlk99+83ZHVP5eDKzVcEj8P1zZMPCvtNXdZbpbPgSmlqFvVr9iPSGpAbWY+g4Jf9WyaDPMkx",
-	"HQFSMnl8B1nd1Cjus6gErvwgtb6k0xnwje0d6TlyGa6NotP4S6TfgsV/pHvz6rK7ervxHnTI/Ws0FyJB",
-	"EBZC9PVVbDagCPFDuDzyOXe7b8u5FXkQ4reVerAAg2QEXtyp1d1Bgd99+XqJdOVD2jHj+bzLnPv9dcXd",
-	"T7dfY+6MNpHV6t8AAAD//zteKdXhHAAA",
+	"H4sIAAAAAAAC/+xaX2/bOBL/KgPdAdsCsuNueg/nt27S9nw47B2aFAtcWxi0OLK4lUiVpNxqC3/3A0nJ",
+	"oiTKcXpJtlnsm2KNyJnf/OYPh/kaJaIoBUeuVbT8Gqkkw4LYxxe0YPwSy1zUb/BThUqbX0spSpSaoZVJ",
+	"iMatkLV5pqgSyUrNBI+W0XWG0L4FkYI2f2ckz5FvEbQAaleeR3Gk6xKjZaS0ZHwb7ePoILfmpMDw2ubN",
+	"7dbdx5HETxWTSKPlu0710X4fDp+Kza+YaKPST1X+8d8lSmJUeIOqFFxhAI92JfsX01jYh79KTKNl9Jez",
+	"DuyzBumzi/aTi0ahw+r7gx5ESlL3kFHrRFTceqSRYVzjFqWRKlApskXv5QQGrWBgYf+nICLTeh9lyQnO",
+	"vku//clfH4cCuV7xVNy1i+IoEZxjYuxbs2aDkYyzDOmaVi6O1goTwakaI3TZSADj0AiBYjzBBh5jCChN",
+	"pEbqQeXFwGEz+1nYB5oVaB3gLfqZKEgkkmbhVMiC6GgZUaJxZj4IORy/lEyiWhM93uiXDPlwk0Z+Dj9X",
+	"eQ6pkFBx9qnyZdTpuytNdGVBRF4VhhsWGfM2jmTFuXtSWpSlefzw7dQ6bDYC+Jh7Q4R8KaWQYx4eTV3h",
+	"Re6d2o4NJzv32xhkLFl71o/ZakWgEYFUisLunBKWI/UUCKYkRsOLenqvLsORVErcMVGpdcez8TruHWww",
+	"FXIUU1oSrpiRRmpSnLVkDitOmXGOgs8Z6gwlkOYrEBI0yoJxohGIzSsWV8ahlGIrUdn4CPD9CMvjSCMp",
+	"1lNQmJfAKHLNUoZyDi+LUtfgvvaC9IyYxmgYqqO9qpLemjY5URqaD0/lziB2GTVReySAWwzGjh2ysEf9",
+	"nkGhgH6DWtZdLE6WXOfNsAsaT2sBJUpjPMzgB4fRD+ZXafbwQIvhhwNNrEBHmmBoxGa1HBthiYXYjch6",
+	"CCxKNNkQhXNYpcCFNszbMYo0tq9bVrI8hw0C4ylKibT7voW3jY0nIW4LntdPfSo7IeunRsamVqN0kNKd",
+	"5pPEXl22jYYfkw2aoZgfUKq/Rcj3V9bCIw3gCd2BrYmubliiL7+eXHw1cuV/N4DAVPm2JgGSJIPDJ0Ao",
+	"VfAE59t5DO+j80XxPjIPz7L30dP50d3UOsc0ENs/V8UGpUG8EwUjalOIzpjyczXMngFLoeI5K9hkMzOu",
+	"8IGyHvtp0EZykDAuiQVzks3BVkOmgIx7EkNdLvwCsxEiR8LD1fkaSdElhCP08FLpycemQdUPnJUeLtkP",
+	"4qXLsL5h47gxjsWkkkzXV8YqB8YGiUT5otJZ99erNhD++cu18bOVNvDbt51CmdZltDcLt2HWt/zFf1bW",
+	"NqeXsfTi+lV3/FBQKfPjC67YJrfBxnRuFn5N8h3h7DeEFVea8MTuukOp3MKL+fl8YUAXJXJSsmgZnc8X",
+	"83NTZYjOrGEOyrNE8JRtZ0mGyUdLBeGqhGhP1ysaLaMLK3VhhQy6jjp2nR8Xi7FlF6IoKm7aCZeUdQb/",
+	"rXkCqkoSVCqtcqPd88Wz8advOal0JiT7DakTOh8LvRJywyhFDjOwgxEgdmE4OH4fR38LabbiGiUnOSiU",
+	"O5Su+ek5P1q+67v93Yf9hzhSVVEQ07ZGFgZIwibapRpsm+IxiaoLGqt/68fIcReV/knQuknWGt1ogZRl",
+	"3mx49qtyVdsF4E3hGRge7ftxomWF+5FrfwycBbv802hqsS91664g6DuSMwrN3nAGb/lHLj5zOIwtYHX5",
+	"AJR4vvj7UYtILpHQGvALU1p5JLoTL7xsuGb7hDsmpTOiKxPdEOOJy5m2tRmzc0by/EaG5nmPpCoKE+VO",
+	"QAqP9gKgGcHA/OERJ5bWh3k+8qKadKPdZzao2VsMtEKvUdu1PVmXt5qO2K4UA+NJXlFTeHpHXOP0Pjn+",
+	"xZQeHPnVRHU4mRknNRuhOcOo4xgTxuhrG0Frlo/Yg1Hmu08jFqMhSRhvMGuPThNUzJnSM8fcmWWuz8Ux",
+	"d95ayYturv0Q3LnFfH+aQaPofMRJ5+DxgFGdayXmglDPq2296Ovzxor5aYtxil/cKZwy9REIp81IxR6B",
+	"GS+wELJ2cqMU49a7kSJBJf4QveYEoH3XaFl7BeCYd7SsD1M9N3fIiDbHy0GIz+GqxISldTtXIaqb/Ajp",
+	"z3nmAaf1Rk/31NJODLi+ta112BzpaO87dbsOuVWgV6DsuGvgoQdplp/fv+GXfStTUfFHVTDbmBoNNyer",
+	"pEZS3Em/1s6XYmjGT2DZ4eZPMWylqEqksKndeMV+6unXzuCCfd1gWPQgpXlqQHWLwuxDVaK0hv/Z3R3v",
+	"7oY8meZtOwGfPC5etyLf80wjUKhbvU2le9C2oUmxg5G16F2ADDLinZPiurvZO314cCDD8flBR4ibRwiL",
+	"32mEoH3nP/oZgufNE8cIp00p7zmY/0CzydMmjN7VucXD3ig+xnljlytYSxFLK3vdRqdp9dK+79HqntLB",
+	"4Do01IQeriOtUugfHvN6kjoXhJue1X3Ua/20EIBE5nUMBfniXz1KJEmGNAbUyfzpLWh1U6G4z6TifOXu",
+	"rFuoRNo7STqnZ0hyd1MWnPq8Rv0PJ/F/urt/Ydndx974T0pj31+h3LEEzSHYaV8PselB4fQHd19mbe52",
+	"n7K5JflV+48dvyPVnYT9ZwOGu1uVulsw8LtPX+Zs1b87sGdq48/b9LnfX1W8++72IfrOYBHZ7/8XAAD/",
+	"/97QEasPLwAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

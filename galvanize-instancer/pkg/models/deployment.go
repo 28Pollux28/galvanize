@@ -31,6 +31,7 @@ type Deployment struct {
 	Category          string
 	TeamID            *string `gorm:"index"`
 	Status            string
+	PreviousStatus    string
 	ConnectionInfo    string
 	Error             string
 	ExpiresAt         *time.Time `gorm:"index"`
@@ -92,6 +93,40 @@ func GetAllUniqueDeployments(db *gorm.DB) ([]Deployment, error) {
 	return deployments, result.Error
 }
 
+// GetActiveDeployments retrieves all deployments with status starting, running, or stopping.
+func GetActiveDeployments(db *gorm.DB) ([]Deployment, error) {
+	var deployments []Deployment
+	result := db.Where("status IN ?", []string{DeploymentStatusStarting, DeploymentStatusRunning, DeploymentStatusStopping}).Find(&deployments)
+	return deployments, result.Error
+}
+
+// GetErrorDeployments retrieves all deployments with status error.
+func GetErrorDeployments(db *gorm.DB) ([]Deployment, error) {
+	var deployments []Deployment
+	result := db.Where("status = ?", DeploymentStatusError).Find(&deployments)
+	return deployments, result.Error
+}
+
+// GetDeploymentByIDWithLock retrieves a deployment by its primary key ID with optional locking.
+func GetDeploymentByIDWithLock(db *gorm.DB, id uint, lock bool) (*Deployment, error) {
+	var deployment Deployment
+	var result *gorm.DB
+	if lock {
+		result = db.Clauses(clause.Locking{
+			Strength: "UPDATE",
+		}).First(&deployment, id)
+	} else {
+		result = db.First(&deployment, id)
+	}
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, result.Error
+	}
+	return &deployment, nil
+}
+
 // GetDeploymentByID retrieves a deployment by its primary key ID
 func GetDeploymentByID(db *gorm.DB, id uint) (*Deployment, error) {
 	var deployment Deployment
@@ -129,6 +164,10 @@ func CreateUniqueDeployment(db *gorm.DB, challengeName, category string) (*Deplo
 }
 
 func UpdateDeploymentStatus(db *gorm.DB, deployment *Deployment, status, connectionInfo, errMsg string) error {
+	// Save previous status when transitioning to error
+	if status == DeploymentStatusError && deployment.Status != DeploymentStatusError {
+		deployment.PreviousStatus = deployment.Status
+	}
 	deployment.Status = status
 	deployment.ConnectionInfo = connectionInfo
 	deployment.Error = errMsg

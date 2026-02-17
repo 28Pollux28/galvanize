@@ -277,6 +277,99 @@ paths:
         '500':
           description: Internal server error
 
+  /admin/team-deployments:
+    get:
+      summary: List all deployments grouped by team (admin only)
+      description: Get all deployments with status starting, running or stopping, grouped by team with deployment duration
+      operationId: listTeamDeployments
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: List of deployments per team
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamDeploymentsResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin access required
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/error-deployments:
+    get:
+      summary: List all deployments in error status (admin only)
+      description: Get all deployments with status error, including error messages
+      operationId: listErrorDeployments
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: List of error deployments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ErrorDeploymentInfo'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin access required
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/retry-deployment:
+    post:
+      summary: Retry a failed deployment (admin only)
+      description: Retry a deployment that is in error status. Specify action as 'deploy' or 'terminate'.
+      operationId: retryDeployment
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryDeploymentRequest'
+      responses:
+        '202':
+          description: Retry request accepted
+        '400':
+          description: Invalid request or deployment not in error status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin access required
+        '404':
+          description: Deployment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -374,3 +467,98 @@ components:
       required:
         - category
         - challenge_name
+
+    TeamDeploymentsResponse:
+      type: object
+      properties:
+        team_id:
+          type: string
+          description: The team identifier. Empty string for unique/admin deployments.
+        deployments:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeploymentInfo'
+      required:
+        - team_id
+        - deployments
+
+    DeploymentInfo:
+      type: object
+      properties:
+        category:
+          type: string
+        challenge_name:
+          type: string
+        status:
+          type: string
+          enum: [ starting, running, stopping ]
+        deployed_since:
+          type: string
+          format: date-time
+          description: The time the deployment was created.
+        deployed_duration_seconds:
+          type: integer
+          description: Duration in seconds since deployment started.
+        connection_info:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          description: When the deployment expires. Null for unique deployments.
+      required:
+        - category
+        - challenge_name
+        - status
+        - deployed_since
+        - deployed_duration_seconds
+
+    ErrorDeploymentInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The deployment ID.
+        category:
+          type: string
+        challenge_name:
+          type: string
+        team_id:
+          type: string
+          description: The team identifier. Empty string for unique/admin deployments.
+        previous_status:
+          type: string
+          enum: [ starting, stopping ]
+          description: The status before the deployment transitioned to error. Indicates whether a deploy or terminate action was in progress.
+        error_message:
+          type: string
+          description: The error message from the failed deployment.
+        created_at:
+          type: string
+          format: date-time
+          description: When the deployment was created.
+        updated_at:
+          type: string
+          format: date-time
+          description: When the deployment was last updated.
+      required:
+        - id
+        - category
+        - challenge_name
+        - team_id
+        - previous_status
+        - error_message
+        - created_at
+        - updated_at
+
+    RetryDeploymentRequest:
+      type: object
+      required:
+        - deployment_id
+      properties:
+        deployment_id:
+          type: integer
+          description: The ID of the deployment to retry.
+        action:
+          type: string
+          enum: [ deploy, terminate, delete ]
+          description: The action to perform - 'deploy' to retry deployment, 'terminate' to terminate the failed deployment, 'delete' to remove the deployment from the database. If not provided, the action will be inferred from the previous status (deploy or terminate only).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/28Pollux28/galvanize/internal/auth"
 	"github.com/28Pollux28/galvanize/internal/challenge"
@@ -335,4 +336,212 @@ func (s *Server) TerminateAllAdminInstances(ctx echo.Context) error {
 		ChallengesCount: terminated,
 		Challenges:      challenges,
 	})
+}
+
+func (s *Server) ListTeamDeployments(ctx echo.Context) error {
+	claims, err := auth.GetClaims(ctx)
+	if err != nil {
+		zap.S().Debugf("Failed to get claims: %v", err)
+		return ctx.JSON(401, api.Error{Message: utils.Ptr("Unauthorized")})
+	}
+	if claims.Role != "admin" {
+		return ctx.JSON(403, api.Error{Message: utils.Ptr("Forbidden - Admin access required")})
+	}
+
+	deployments, err := models.GetActiveDeployments(s.db)
+	if err != nil {
+		zap.S().Errorf("Failed to get active deployments: %v", err)
+		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to get deployments: %v", err))})
+	}
+
+	// Group deployments by team
+	teamMap := make(map[string][]api.DeploymentInfo)
+	now := time.Now()
+
+	for _, d := range deployments {
+		teamID := ""
+		if d.TeamID != nil {
+			teamID = *d.TeamID
+		}
+
+		info := api.DeploymentInfo{
+			Category:                d.Category,
+			ChallengeName:           d.ChallengeName,
+			Status:                  api.DeploymentInfoStatus(d.Status),
+			DeployedSince:           d.CreatedAt,
+			DeployedDurationSeconds: int(now.Sub(d.CreatedAt).Seconds()),
+		}
+		if d.ConnectionInfo != "" {
+			info.ConnectionInfo = &d.ConnectionInfo
+		}
+		if d.ExpiresAt != nil {
+			info.ExpiresAt = d.ExpiresAt
+		}
+
+		teamMap[teamID] = append(teamMap[teamID], info)
+	}
+
+	// Convert map to response slice
+	response := make([]api.TeamDeploymentsResponse, 0, len(teamMap))
+	for teamID, deps := range teamMap {
+		response = append(response, api.TeamDeploymentsResponse{
+			TeamId:      teamID,
+			Deployments: deps,
+		})
+	}
+
+	return ctx.JSON(200, response)
+}
+
+func (s *Server) ListErrorDeployments(ctx echo.Context) error {
+	claims, err := auth.GetClaims(ctx)
+	if err != nil {
+		zap.S().Debugf("Failed to get claims: %v", err)
+		return ctx.JSON(401, api.Error{Message: utils.Ptr("Unauthorized")})
+	}
+	if claims.Role != "admin" {
+		return ctx.JSON(403, api.Error{Message: utils.Ptr("Forbidden - Admin access required")})
+	}
+
+	deployments, err := models.GetErrorDeployments(s.db)
+	if err != nil {
+		zap.S().Errorf("Failed to get error deployments: %v", err)
+		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to get deployments: %v", err))})
+	}
+
+	response := make([]api.ErrorDeploymentInfo, 0, len(deployments))
+	for _, d := range deployments {
+		teamID := ""
+		if d.TeamID != nil {
+			teamID = *d.TeamID
+		}
+		info := api.ErrorDeploymentInfo{
+			Id:            int(d.ID),
+			Category:      d.Category,
+			ChallengeName: d.ChallengeName,
+			TeamId:        teamID,
+			ErrorMessage:  d.Error,
+			CreatedAt:     d.CreatedAt,
+			UpdatedAt:     d.UpdatedAt,
+		}
+		if d.PreviousStatus != "" {
+			info.PreviousStatus = api.ErrorDeploymentInfoPreviousStatus(d.PreviousStatus)
+		}
+		response = append(response, info)
+	}
+
+	return ctx.JSON(200, response)
+}
+
+func (s *Server) RetryDeployment(ctx echo.Context) error {
+	claims, err := auth.GetClaims(ctx)
+	if err != nil {
+		zap.S().Debugf("Failed to get claims: %v", err)
+		return ctx.JSON(401, api.Error{Message: utils.Ptr("Unauthorized")})
+	}
+	if claims.Role != "admin" {
+		return ctx.JSON(403, api.Error{Message: utils.Ptr("Forbidden - Admin access required")})
+	}
+
+	var req api.RetryDeploymentRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(400, api.Error{Message: utils.Ptr("Invalid request body")})
+	}
+
+	deployment, err := models.GetDeploymentByIDWithLock(s.db, uint(req.DeploymentId), true)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return ctx.JSON(404, api.Error{Message: utils.Ptr("Deployment not found")})
+		}
+		zap.S().Errorf("Failed to get deployment: %v", err)
+		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to get deployment: %v", err))})
+	}
+
+	if deployment.Status != models.DeploymentStatusError {
+		return ctx.JSON(400, api.Error{Message: utils.Ptr("Deployment is not in error status")})
+	}
+
+	// Infer action from previous status if not provided
+	action := req.Action
+	if action == nil {
+		switch deployment.PreviousStatus {
+		case models.DeploymentStatusStarting:
+			action = utils.Ptr(api.Deploy)
+		case models.DeploymentStatusStopping:
+			action = utils.Ptr(api.Terminate)
+		default:
+			return ctx.JSON(400, api.Error{Message: utils.Ptr("Cannot infer action from previous status, please specify action explicitly")})
+		}
+	}
+
+	conf := s.confProv.GetConfig()
+	chall, err := s.challIdx.Get(deployment.Category, deployment.ChallengeName)
+	if err != nil {
+		zap.S().Errorf("Failed to get challenge: %v", err)
+		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to get challenge: %v", err))})
+	}
+
+	teamID := ""
+	if deployment.TeamID != nil {
+		teamID = *deployment.TeamID
+	}
+
+	switch *action {
+	case api.Deploy:
+		// Update status to starting and retry deployment
+		if err := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusStarting, "", ""); err != nil {
+			zap.S().Errorf("Failed to update deployment status: %v", err)
+			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to update deployment status: %v", err))})
+		}
+
+		s.wg.Add(1)
+		go func(d *models.Deployment, ch *challenge.Challenge) {
+			defer s.wg.Done()
+			connInfo, err := s.deployer.Deploy(context.Background(), conf, ch, teamID)
+			if err != nil {
+				zap.S().Errorf("Retry deploy failed for %s: %v", ch.Name, err)
+				dbErr := models.UpdateDeploymentStatus(s.db, d, models.DeploymentStatusError, "", err.Error())
+				if dbErr != nil {
+					zap.S().Errorf("Failed to save deployment error status: %v", dbErr)
+				}
+				return
+			}
+			dbErr := models.UpdateDeploymentStatus(s.db, d, models.DeploymentStatusRunning, connInfo, "")
+			if dbErr != nil {
+				zap.S().Errorf("Failed to save deployment running status: %v", dbErr)
+				return
+			}
+			zap.S().Infof("Retry deployment of challenge %s completed successfully", ch.Name)
+		}(deployment, chall)
+
+	case api.Terminate:
+		// Update status to stopping and terminate
+		if err := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusStopping, "", ""); err != nil {
+			zap.S().Errorf("Failed to update deployment status: %v", err)
+			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to update deployment status: %v", err))})
+		}
+
+		s.wg.Add(1)
+		go func(d *models.Deployment) {
+			defer s.wg.Done()
+			err := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, d)
+			if err != nil {
+				zap.S().Errorf("Retry terminate failed for deployment %d: %v", d.ID, err)
+			}
+		}(deployment)
+
+	case api.Delete:
+		// Delete the deployment from the database without running any Ansible
+		if err := models.DeleteDeployment(s.db, deployment); err != nil {
+			zap.S().Errorf("Failed to delete deployment %d: %v", deployment.ID, err)
+			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to delete deployment: %v", err))})
+		}
+		zap.S().Infof("Deployment %d deleted from database", deployment.ID)
+		return ctx.NoContent(200)
+
+	default:
+		return ctx.JSON(400, api.Error{Message: utils.Ptr("Invalid action, must be 'deploy', 'terminate', or 'delete'")})
+	}
+
+	return ctx.NoContent(202)
 }

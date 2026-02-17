@@ -1,6 +1,10 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+- Add `/admin/team-deployments` endpoint to list all deployments grouped by team with deployment duration
+- Add `/admin/error-deployments` endpoint to list all deployments in error status
+- Add `/admin/retry-deployment` endpoint to retry failed deployments (deploy, terminate, or delete)
+- Add `previous_status` field to track deployment status before transitioning to error
 
 ## v0.3.0 (2026-02-17)
 - Add ansible worker and redis queue
