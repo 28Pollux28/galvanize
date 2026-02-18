@@ -2,6 +2,8 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+## v0.5.0 (2026-02-18)
+
 ### Added
 - Prometheus metrics endpoint on port **5001** (`/metrics`) with optional HTTP Basic Auth (`instancer.metrics.username` / `instancer.metrics.password` in config)
 - Deployment count gauge (`instancer_deployments`) backed by the database, grouped by status / category / challenge / team
