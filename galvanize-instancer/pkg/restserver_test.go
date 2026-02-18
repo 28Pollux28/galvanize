@@ -105,6 +105,14 @@ func (m *mockChallengeIndexer) GetAllUnique() []*challenge.Challenge {
 	return unique
 }
 
+func (m *mockChallengeIndexer) GetAll() []*challenge.Challenge {
+	challs := make([]*challenge.Challenge, 0, len(m.challenges))
+	for _, c := range m.challenges {
+		challs = append(challs, c)
+	}
+	return challs
+}
+
 func (m *mockChallengeIndexer) BuildIndex(_ string) error { return nil }
 
 var _ challenge.ChallengeIndexer = (*mockChallengeIndexer)(nil)

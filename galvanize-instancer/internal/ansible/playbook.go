@@ -48,6 +48,15 @@ func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Chall
 	maps.Copy(playbookOpts.ExtraVars, params)
 	maps.Copy(playbookOpts.ExtraVars, conf.Instancer.ExtraDeploymentParameters)
 
+	// Ensure env is always a map[string]interface{}.
+	// If the challenge has no "env" key, params["env"] is nil. Go-ansible
+	// serialises nil as JSON null, and Jinja2's default() filter only fires
+	// for Undefined — not None — so "{{ env | default({}) }}" renders as an
+	// empty string, which docker-compose rejects with "must be a mapping".
+	if _, ok := playbookOpts.ExtraVars["env"].(map[string]interface{}); !ok {
+		playbookOpts.ExtraVars["env"] = map[string]interface{}{}
+	}
+
 	pbCmd := playbook.NewAnsiblePlaybookCmd(
 		playbook.WithPlaybooks(path.Join(conf.Instancer.AnsibleDir, challenge.PlaybookName+".yaml")),
 		playbook.WithPlaybookOptions(playbookOpts),

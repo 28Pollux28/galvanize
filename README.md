@@ -52,6 +52,21 @@ Galvanize Instancer is a lightweight service that deploys on-demand CTF challeng
     curl -f http://localhost:8080/health
     ```
 
+### Optional: Monitoring (Prometheus + Grafana)
+
+Append the monitoring overlay to bring up Prometheus and Grafana alongside the instancer:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build
+```
+
+| Service    | URL                    | Credentials  |
+|------------|------------------------|--------------|
+| Grafana    | http://localhost:3000  | admin / admin |
+| Prometheus | http://localhost:9090  | —            |
+
+Grafana is pre-provisioned with the **Galvanize CTF Instancer** dashboard covering deployment counts, operation durations, extension stats, worker queue metrics, HTTP API latency, and more. The instancer exposes Prometheus metrics on port **5001** (`/metrics`).
+
 ## Zync CTFd Plugin Integration
 
 Configure the Zync plugin to use your Instancer base URL and the same JWT secret you set in `config.yaml`.

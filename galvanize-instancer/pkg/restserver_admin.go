@@ -9,6 +9,7 @@ import (
 	"github.com/28Pollux28/galvanize/internal/auth"
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/api"
+	pkgmetrics "github.com/28Pollux28/galvanize/pkg/metrics"
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"github.com/28Pollux28/galvanize/pkg/utils"
 	"github.com/labstack/echo/v4"
@@ -31,6 +32,7 @@ func (s *Server) ReloadChallenges(ctx echo.Context) error {
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to reload challenges: %v", err))})
 	}
 
+	updateChallengeIndexMetrics(s.challIdx)
 	zap.S().Infof("Challenges reloaded successfully")
 	return ctx.NoContent(200)
 }
@@ -99,6 +101,7 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 	existingDeployment, err := models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
 	if err == nil && existingDeployment != nil {
 		_ = s.kmu.UnlockKey(id)
+		pkgmetrics.DeployConflictTotal.WithLabelValues(chall.Category, chall.Name).Inc()
 		return ctx.JSON(409, api.Error{Message: utils.Ptr("Challenge already deployed")})
 	}
 	if err != nil && !errors.Is(err, models.ErrNotFound) {
@@ -120,15 +123,20 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 	conf := s.confProv.GetConfig()
 	go func() {
 		defer s.wg.Done()
-		deployOps.Inc()
 		deployment, dbErr := models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
 		if dbErr != nil {
 			zap.S().Errorf("Failed to get deployment for update: %v", dbErr)
 			return
 		}
 
+		start := time.Now()
 		connInfo, err := s.deployer.Deploy(context.Background(), conf, chall, "")
+		duration := time.Since(start)
+		result := "success"
 		if err != nil {
+			result = "error"
+			pkgmetrics.DeployDurationSeconds.WithLabelValues(chall.Category, chall.Name, "").Observe(duration.Seconds())
+			pkgmetrics.DeployOpsTotal.WithLabelValues(chall.Category, chall.Name, result).Inc()
 			zap.S().Errorf("Deploy failed for admin challenge %s: %v", chall.Name, err)
 			dbErr = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
 			if dbErr != nil {
@@ -136,6 +144,9 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 			}
 			return
 		}
+
+		pkgmetrics.DeployDurationSeconds.WithLabelValues(chall.Category, chall.Name, "").Observe(duration.Seconds())
+		pkgmetrics.DeployOpsTotal.WithLabelValues(chall.Category, chall.Name, result).Inc()
 
 		err = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusRunning, connInfo, "")
 		if err != nil {
@@ -190,10 +201,18 @@ func (s *Server) TerminateAdminInstance(ctx echo.Context) error {
 	conf := s.confProv.GetConfig()
 	go func() {
 		defer s.wg.Done()
+		start := time.Now()
 		err = models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
+		duration := time.Since(start)
+		result := "success"
 		if err != nil {
+			result = "error"
 			zap.S().Errorf("Failed to terminate instance: %v", err)
+		} else {
+			pkgmetrics.DeploymentLifetimeSeconds.WithLabelValues(deployment.Category, deployment.ChallengeName).Observe(time.Since(deployment.CreatedAt).Seconds())
 		}
+		pkgmetrics.TerminateDurationSeconds.WithLabelValues(deployment.Category, deployment.ChallengeName, "").Observe(duration.Seconds())
+		pkgmetrics.TerminateOpsTotal.WithLabelValues(deployment.Category, deployment.ChallengeName, result).Inc()
 	}()
 
 	return ctx.NoContent(200)
@@ -246,15 +265,20 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 		// Deploy in goroutine
 		go func(ch *challenge.Challenge) {
 			defer s.wg.Done()
-			deployOps.Inc()
 			deployment, dbErr := models.GetUniqueDeployment(s.db, ch.Category, ch.Name, false)
 			if dbErr != nil {
 				zap.S().Errorf("Failed to get deployment for %s: %v", ch.Name, dbErr)
 				return
 			}
 
+			start := time.Now()
 			connInfo, err := s.deployer.Deploy(context.Background(), conf, ch, "")
+			duration := time.Since(start)
+			result := "success"
 			if err != nil {
+				result = "error"
+				pkgmetrics.DeployDurationSeconds.WithLabelValues(ch.Category, ch.Name, "").Observe(duration.Seconds())
+				pkgmetrics.DeployOpsTotal.WithLabelValues(ch.Category, ch.Name, result).Inc()
 				zap.S().Errorf("Deploy failed for %s: %v", ch.Name, err)
 				dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", err.Error())
 				if dbErr != nil {
@@ -262,6 +286,9 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 				}
 				return
 			}
+
+			pkgmetrics.DeployDurationSeconds.WithLabelValues(ch.Category, ch.Name, "").Observe(duration.Seconds())
+			pkgmetrics.DeployOpsTotal.WithLabelValues(ch.Category, ch.Name, result).Inc()
 
 			dbErr = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusRunning, connInfo, "")
 			if dbErr != nil {
@@ -324,10 +351,18 @@ func (s *Server) TerminateAllAdminInstances(ctx echo.Context) error {
 		s.wg.Add(1)
 		go func(d models.Deployment) {
 			defer s.wg.Done()
+			start := time.Now()
 			err := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, &d)
+			duration := time.Since(start)
+			result := "success"
 			if err != nil {
+				result = "error"
 				zap.S().Errorf("Failed to terminate deployment %d: %v", d.ID, err)
+			} else {
+				pkgmetrics.DeploymentLifetimeSeconds.WithLabelValues(d.Category, d.ChallengeName).Observe(time.Since(d.CreatedAt).Seconds())
 			}
+			pkgmetrics.TerminateDurationSeconds.WithLabelValues(d.Category, d.ChallengeName, "").Observe(duration.Seconds())
+			pkgmetrics.TerminateOpsTotal.WithLabelValues(d.Category, d.ChallengeName, result).Inc()
 		}(deployment)
 	}
 
@@ -527,6 +562,8 @@ func (s *Server) RetryDeployment(ctx echo.Context) error {
 			err := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, d)
 			if err != nil {
 				zap.S().Errorf("Retry terminate failed for deployment %d: %v", d.ID, err)
+			} else {
+				pkgmetrics.DeploymentLifetimeSeconds.WithLabelValues(d.Category, d.ChallengeName).Observe(time.Since(d.CreatedAt).Seconds())
 			}
 		}(deployment)
 
@@ -544,4 +581,16 @@ func (s *Server) RetryDeployment(ctx echo.Context) error {
 	}
 
 	return ctx.NoContent(202)
+}
+
+// updateChallengeIndexMetrics refreshes the instancer_challenges_indexed gauge
+// after a BuildIndex call. It counts challenges per category and calls
+// pkgmetrics.SetChallengesIndexed to reset+set the GaugeVec.
+func updateChallengeIndexMetrics(idx challenge.ChallengeIndexer) {
+	challs := idx.GetAll()
+	counts := make(map[string]int, 8)
+	for _, ch := range challs {
+		counts[ch.Category]++
+	}
+	pkgmetrics.SetChallengesIndexed(counts)
 }

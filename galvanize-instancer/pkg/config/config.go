@@ -31,6 +31,11 @@ type Config struct {
 	Instancer InstancerConfig `mapstructure:"instancer"`
 }
 
+type MetricsConfig struct {
+	Username string `mapstructure:"username"` // Basic-auth username for the metrics endpoint (default: "prometheus")
+	Password string `mapstructure:"password"` // Basic-auth password; leave empty to disable auth
+}
+
 type AuthConfig struct {
 	JWTSecret string `mapstructure:"jwt_secret"`
 }
@@ -49,6 +54,7 @@ type InstancerConfig struct {
 	MaxConcurrentAnsible      int                    `mapstructure:"max_concurrent_ansible,omitempty"`      // Maximum concurrent Ansible executions (default: 5) - deprecated, use NumWorkers
 	Redis                     RedisConfig            `mapstructure:"redis"`                                 // Redis configuration for job queue
 	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                 // Number of Ansible workers (default: 10)
+	Metrics                   MetricsConfig          `mapstructure:"metrics"`                               // Metrics endpoint configuration
 }
 
 type RedisConfig struct {

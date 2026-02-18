@@ -13,6 +13,7 @@ import (
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/config"
 	pkgerrors "github.com/28Pollux28/galvanize/pkg/errors"
+	pkgmetrics "github.com/28Pollux28/galvanize/pkg/metrics"
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -146,6 +147,9 @@ const jobTimeout = 10 * time.Minute
 func (p *Pool) processJob(ctx context.Context, workerID string, job *Job) {
 	p.logger.Infof("Worker %s processing job: %s (attempt %d)", workerID, job.ID, job.Retries+1)
 
+	// Observe how long the job waited in the queue before being picked up.
+	pkgmetrics.JobQueueWaitSeconds.WithLabelValues(string(job.Type)).Observe(time.Since(job.CreatedAt).Seconds())
+
 	// Create a timeout context for this job
 	jobCtx, cancel := context.WithTimeout(ctx, jobTimeout)
 	defer cancel()
@@ -171,6 +175,7 @@ func (p *Pool) processJob(ctx context.Context, workerID string, job *Job) {
 	if err != nil {
 		if isErr, errPattern := pkgerrors.IsTransientErrorMsg(err); isErr && job.Retries < maxRetries {
 			p.logger.Warnf("Worker %s: transient error %s for job %s, requeueing: %v", workerID, errPattern, job.ID, err)
+			pkgmetrics.JobRetriesTotal.WithLabelValues(job.Category, job.ChallengeName, string(job.Type)).Inc()
 			backoff := time.Duration(job.Retries+1) * 2 * time.Second
 			time.Sleep(backoff)
 			if requeueErr := p.queue.Requeue(ctx, workerID, job); requeueErr != nil {
@@ -180,6 +185,7 @@ func (p *Pool) processJob(ctx context.Context, workerID string, job *Job) {
 		}
 
 		p.logger.Errorf("Worker %s: job %s failed permanently: %v", workerID, job.ID, err)
+		pkgmetrics.JobPermanentFailuresTotal.WithLabelValues(job.Category, job.ChallengeName, string(job.Type)).Inc()
 		_ = p.queue.Fail(ctx, workerID, job)
 		return
 	}
@@ -204,8 +210,14 @@ func (p *Pool) processDeploy(ctx context.Context, job *Job) error {
 
 	conf := p.confProv.GetConfig()
 
+	start := time.Now()
 	connInfo, err := p.deployer.Deploy(ctx, conf, chall, job.TeamID)
+	duration := time.Since(start)
+	result := "success"
 	if err != nil {
+		result = "error"
+		pkgmetrics.DeployDurationSeconds.WithLabelValues(job.Category, job.ChallengeName, job.TeamID).Observe(duration.Seconds())
+		pkgmetrics.DeployOpsTotal.WithLabelValues(job.Category, job.ChallengeName, result).Inc()
 		// Update deployment status to error
 		dbErr := models.UpdateDeploymentStatus(p.db, deployment, models.DeploymentStatusError, "", err.Error())
 		if dbErr != nil {
@@ -213,6 +225,9 @@ func (p *Pool) processDeploy(ctx context.Context, job *Job) error {
 		}
 		return err
 	}
+
+	pkgmetrics.DeployDurationSeconds.WithLabelValues(job.Category, job.ChallengeName, job.TeamID).Observe(duration.Seconds())
+	pkgmetrics.DeployOpsTotal.WithLabelValues(job.Category, job.ChallengeName, result).Inc()
 
 	// Success - update deployment
 	if err := models.UpdateDeploymentStatus(p.db, deployment, models.DeploymentStatusRunning, connInfo, ""); err != nil {
@@ -232,21 +247,32 @@ func (p *Pool) processTerminate(ctx context.Context, job *Job) error {
 
 	conf := p.confProv.GetConfig()
 
-	if err := p.deployer.Terminate(ctx, conf, chall, job.TeamID); err != nil {
+	start := time.Now()
+	termErr := p.deployer.Terminate(ctx, conf, chall, job.TeamID)
+	duration := time.Since(start)
+	result := "success"
+	if termErr != nil {
+		result = "error"
+	}
+	pkgmetrics.TerminateDurationSeconds.WithLabelValues(job.Category, job.ChallengeName, job.TeamID).Observe(duration.Seconds())
+	pkgmetrics.TerminateOpsTotal.WithLabelValues(job.Category, job.ChallengeName, result).Inc()
+
+	if termErr != nil {
 		// Update deployment status to error if we can find it
 		if job.DeploymentID > 0 {
 			deployment, dbErr := models.GetDeploymentByID(p.db, job.DeploymentID)
 			if dbErr == nil {
-				_ = models.UpdateDeploymentStatus(p.db, deployment, models.DeploymentStatusError, "", err.Error())
+				_ = models.UpdateDeploymentStatus(p.db, deployment, models.DeploymentStatusError, "", termErr.Error())
 			}
 		}
-		return err
+		return termErr
 	}
 
 	// Success - delete the deployment from the database
 	if job.DeploymentID > 0 {
 		deployment, dbErr := models.GetDeploymentByID(p.db, job.DeploymentID)
 		if dbErr == nil {
+			pkgmetrics.DeploymentLifetimeSeconds.WithLabelValues(job.Category, job.ChallengeName).Observe(time.Since(deployment.CreatedAt).Seconds())
 			if err := models.DeleteDeployment(p.db, deployment); err != nil {
 				p.logger.Errorf("Failed to delete deployment %d: %v", job.DeploymentID, err)
 				// Don't return error - the termination succeeded, just cleanup failed

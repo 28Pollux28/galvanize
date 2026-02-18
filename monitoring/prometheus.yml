@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: galvanize-instancer
+    static_configs:
+      - targets:
+          - instancer:5001
+    # Uncomment and fill in when instancer.metrics.password is set in config.yaml:
+    # basic_auth:
+    #   username: prometheus
+    #   password: <your-metrics-password>

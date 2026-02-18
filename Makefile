@@ -1,4 +1,4 @@
-.PHONY: all install build run clean docker-build docker-up docker-down api-gen bump-patch bump-minor bump-major help test lint
+.PHONY: all install build run clean docker-build docker-up docker-down api-gen bump-patch bump-minor bump-major help test lint monitoring-up monitoring-down
 
 # Project variables
 APP_NAME := galvanize
@@ -6,6 +6,7 @@ INSTANCER_DIR := galvanize-instancer
 DOCKER_IMAGE := galvanize-instancer
 DOCKER_COMPOSE := docker-compose.yml
 DOCKER_COMPOSE_LOCAL := docker-compose.local.yml
+DOCKER_COMPOSE_MONITORING := docker-compose.monitoring.yml
 
 # Go variables
 GO := go
@@ -32,6 +33,10 @@ help:
 	@echo "  docker-down   Stop services with docker-compose"
 	@echo "  docker-logs   Show docker-compose logs"
 	@echo "  docker-local  Start services with local docker-compose"
+	@echo "  monitoring-up   Start instancer + Prometheus + Grafana (Grafana at http://localhost:3000)"
+	@echo "  monitoring-down Stop monitoring stack"
+	@echo "  monitoring-local-up   Start local instancer + Prometheus + Grafana (Grafana at http://localhost:3000)"
+	@echo "  monitoring-local-down Stop local monitoring stack"
 	@echo ""
 	@echo "  api-gen       Generate API code from OpenAPI spec"
 	@echo "  api-spec      Generate OpenAPI spec from template"
@@ -88,6 +93,22 @@ docker-logs:
 ## docker-local: Start services with local docker-compose
 docker-local: docker-build
 	docker compose -f $(DOCKER_COMPOSE_LOCAL) up -d
+
+## monitoring-up: Start instancer + Prometheus + Grafana (Grafana at http://localhost:3000)
+monitoring-up: docker-build
+	docker compose -f $(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_MONITORING) up -d
+
+## monitoring-down: Stop monitoring stack
+monitoring-down:
+	docker compose -f $(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_MONITORING) down
+
+## monitoring-up: Start instancer + Prometheus + Grafana (Grafana at http://localhost:3000)
+monitoring-local-up: docker-build
+	docker compose -f $(DOCKER_COMPOSE_LOCAL) -f $(DOCKER_COMPOSE_MONITORING) up -d
+
+## monitoring-down: Stop monitoring stack
+monitoring-local-down:
+	docker compose -f $(DOCKER_COMPOSE_LOCAL) -f $(DOCKER_COMPOSE_MONITORING) down
 
 ## api-spec: Generate OpenAPI spec from template (copies .in to .yaml)
 api-spec:

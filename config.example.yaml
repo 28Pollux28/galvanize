@@ -12,6 +12,9 @@ instancer:
   deployment_max_extensions: 3 # Maximum number of extensions allowed per deployment (-1 for unlimited) (default: 3)
   num_workers: 10 # Number of Ansible workers for processing jobs (default: 10)
   max_concurrent_ansible: 5 # Fallback: max concurrent Ansible when Redis not configured (default: 5)
+  metrics:
+    username: "prometheus" # Basic-auth username for the /metrics endpoint (default: "prometheus")
+    password: ""           # Basic-auth password; leave empty to disable authentication
   redis:
     addr: "localhost:6379" # Redis address for job queue (leave empty to disable queue and use direct goroutines)
     password: "" # Redis password (optional)

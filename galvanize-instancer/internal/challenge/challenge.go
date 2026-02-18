@@ -16,6 +16,7 @@ import (
 type ChallengeIndexer interface {
 	Get(category, name string) (*Challenge, error)
 	GetAllUnique() []*Challenge
+	GetAll() []*Challenge
 	BuildIndex(baseDir string) error
 }
 
@@ -96,6 +97,16 @@ func (idx *ChallengeIndex) GetAllUnique() []*Challenge {
 		}
 	}
 	return unique
+}
+
+func (idx *ChallengeIndex) GetAll() []*Challenge {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	challs := make([]*Challenge, 0, len(idx.challs))
+	for _, ch := range idx.challs {
+		challs = append(challs, ch)
+	}
+	return challs
 }
 
 func parseChallenge(challengeFilePath string) (*Challenge, error) {

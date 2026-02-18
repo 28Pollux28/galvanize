@@ -1,0 +1,1612 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    }
+  ],
+  "id": null,
+  "uid": "galvanize-instancer",
+  "title": "Galvanize CTF Instancer",
+  "description": "Comprehensive monitoring dashboard for the Galvanize CTF challenge instancer",
+  "tags": [
+    "galvanize",
+    "ctf"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "schemaVersion": 38,
+  "version": 3,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "label": "Datasource",
+        "pluginId": "prometheus",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active Deployments",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "sum(instancer_deployments{status=~\"running|starting|stopping|error\"}) or vector(0)",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Running",
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "sum(instancer_deployments{status=\"running\"}) or vector(0)",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "In Error",
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "sum(instancer_deployments{status=\"error\"}) or vector(0)",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Deploy Rate (per min)",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(instancer_deploy_ops_total[$__rate_interval])) * 60",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Deploy Error Rate",
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(instancer_deploy_ops_total{result=\"error\"}[$__rate_interval])) / clamp_min(sum(rate(instancer_deploy_ops_total[$__rate_interval])), 0.001)",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Queue Depth",
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "instancer_queue_depth or vector(0)",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Deployments",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Deployments by Status",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (instancer_deployments)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Deployments by Category",
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (category) (instancer_deployments)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{category}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Deploy & Terminate Operations",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Deploy Rate per Minute by Result",
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(instancer_deploy_ops_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Terminate Rate per Minute by Result",
+      "gridPos": {
+        "x": 8,
+        "y": 17,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(instancer_terminate_ops_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Deploy Conflicts per Minute (409)",
+      "gridPos": {
+        "x": 16,
+        "y": 17,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (challenge_name) (rate(instancer_deploy_conflict_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{challenge_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Operation Durations",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Deploy Duration \u2014 p50 / p95",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5,  sum by (le) (rate(instancer_deploy_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(instancer_deploy_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Terminate Duration \u2014 p50 / p95",
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5,  sum by (le) (rate(instancer_terminate_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(instancer_terminate_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Duration per Challenge",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Deploy Duration p95 per Challenge",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, challenge_name) (rate(instancer_deploy_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{challenge_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Terminate Duration p95 per Challenge",
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, challenge_name) (rate(instancer_terminate_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{challenge_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "Deployment Lifetime",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Deployment Lifetime \u2014 p50 / p95 / p99",
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5,  sum by (le) (rate(instancer_deployment_lifetime_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(instancer_deployment_lifetime_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(instancer_deployment_lifetime_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Deployment Lifetime p95 per Challenge",
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, challenge_name) (rate(instancer_deployment_lifetime_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{challenge_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Extensions",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Successful Extensions per Minute",
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (challenge_name) (rate(instancer_extend_ops_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{challenge_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Extension Rejections per Minute by Reason",
+      "gridPos": {
+        "x": 12,
+        "y": 57,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(instancer_extend_rejected_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "row",
+      "title": "Worker Queue (Redis)",
+      "gridPos": {
+        "x": 0,
+        "y": 66,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Queue Depth",
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "instancer_queue_depth or vector(0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "queue depth",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Queue Wait Time \u2014 p50 / p95",
+      "gridPos": {
+        "x": 6,
+        "y": 67,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5,  sum by (le) (rate(instancer_job_queue_wait_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(instancer_job_queue_wait_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Job Retries per Minute",
+      "gridPos": {
+        "x": 12,
+        "y": 67,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (job_type) (rate(instancer_job_retries_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{job_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Permanent Failures per Minute",
+      "gridPos": {
+        "x": 18,
+        "y": 67,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (job_type) (rate(instancer_job_permanent_failures_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{job_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "row",
+      "title": "HTTP API",
+      "gridPos": {
+        "x": 0,
+        "y": 76,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Requests per Minute by Endpoint",
+      "gridPos": {
+        "x": 0,
+        "y": 77,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (url, method) (rate(instancer_requests_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "{{method}} {{url}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "4xx / 5xx per Minute",
+      "gridPos": {
+        "x": 8,
+        "y": 77,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(instancer_requests_total{code=~\"4..\"}[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "4xx",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(instancer_requests_total{code=~\"5..\"}[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "5xx",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Request Latency p50 / p95 / p99",
+      "gridPos": {
+        "x": 16,
+        "y": 77,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5,  sum by (le) (rate(instancer_request_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(instancer_request_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(instancer_request_duration_seconds_bucket[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "row",
+      "title": "Challenge Index",
+      "gridPos": {
+        "x": 0,
+        "y": 86,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 37,
+      "type": "bargauge",
+      "title": "Challenges Indexed by Category",
+      "gridPos": {
+        "x": 0,
+        "y": 87,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "expr": "instancer_challenges_indexed",
+          "legendFormat": "{{category}}",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Unauthorized Deploy Requests per Minute",
+      "gridPos": {
+        "x": 12,
+        "y": 87,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqpm",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (team_id) (rate(instancer_unauthorized_deploy_requests_total[$__rate_interval])) * 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "legendFormat": "team {{team_id}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [],
+  "annotations": {
+    "list": []
+  }
+}

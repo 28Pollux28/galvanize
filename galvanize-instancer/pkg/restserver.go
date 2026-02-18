@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"sync"
 
+	"time"
+
 	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/internal/auth"
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/pkg/api"
 	"github.com/28Pollux28/galvanize/pkg/config"
+	pkgmetrics "github.com/28Pollux28/galvanize/pkg/metrics"
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"github.com/28Pollux28/galvanize/pkg/scheduler"
 	"github.com/28Pollux28/galvanize/pkg/utils"
@@ -141,7 +144,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	// Check if challenge is valid for team
 	if req.ChallengeName != claims.ChallengeName && claims.Role != "admin" {
 		zap.S().Errorf("Unauthorized attempt to deploy challenge %s for team %s", req.ChallengeName, claims.TeamID)
-		unauthorizedDeploymentsRequestsPerTeam.WithLabelValues(claims.TeamID).Inc()
+		pkgmetrics.UnauthorizedDeployRequestsTotal.WithLabelValues(claims.TeamID).Inc()
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
 	chall, err := s.challIdx.Get(req.Category, req.ChallengeName)
@@ -158,6 +161,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	existingDeployment, err := models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
 	if err == nil && existingDeployment != nil {
 		_ = s.kmu.UnlockKey(id)
+		pkgmetrics.DeployConflictTotal.WithLabelValues(chall.Category, chall.Name).Inc()
 		return ctx.JSON(409, api.Error{Message: utils.Ptr("Challenge already deployed for this team")})
 	}
 	if err != nil && !errors.Is(err, models.ErrNotFound) {
@@ -184,7 +188,6 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug("Failed to queue deployment")})
 		}
 		zap.S().Infof("Deploy job queued for challenge %s team %s", chall.Name, claims.TeamID)
-		deployOps.Inc()
 		return ctx.NoContent(202)
 	}
 
@@ -192,10 +195,16 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		deployOps.Inc()
 
+		start := time.Now()
 		connInfo, deployErr := s.deployer.Deploy(context.Background(), conf, chall, claims.TeamID)
+		duration := time.Since(start)
+
+		result := "success"
 		if deployErr != nil {
+			result = "error"
+			pkgmetrics.DeployDurationSeconds.WithLabelValues(chall.Category, chall.Name, claims.TeamID).Observe(duration.Seconds())
+			pkgmetrics.DeployOpsTotal.WithLabelValues(chall.Category, chall.Name, result).Inc()
 			zap.S().Errorf("Deploy failed for challenge %s team %s: %v", chall.Name, claims.TeamID, deployErr)
 			dbErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", deployErr.Error())
 			if dbErr != nil {
@@ -204,13 +213,15 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 			return
 		}
 
+		pkgmetrics.DeployDurationSeconds.WithLabelValues(chall.Category, chall.Name, claims.TeamID).Observe(duration.Seconds())
+		pkgmetrics.DeployOpsTotal.WithLabelValues(chall.Category, chall.Name, result).Inc()
+
 		updateErr := models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusRunning, connInfo, "")
 		if updateErr != nil {
 			zap.S().Errorf("Failed to save deployment running status: %v", updateErr)
 			return
 		}
 		zap.S().Infof("Deployment of challenge %s for team %s completed successfully.", chall.Name, claims.TeamID)
-		activeInstancesPerTeam.WithLabelValues(claims.TeamID).Inc()
 	}()
 
 	return ctx.NoContent(202)
@@ -296,9 +307,22 @@ func (s *Server) ExtendInstance(ctx echo.Context) error {
 	conf := s.confProv.GetConfig()
 	err = models.ExtendDeploymentExpiration(s.db, d, conf.Instancer.DeploymentTTLExtension, conf.Instancer.DeploymentExtensionWindow, conf.Instancer.DeploymentMaxExtensions)
 	if err != nil {
+		var reason string
+		switch {
+		case errors.Is(err, models.ErrExtensionWindowNotReached):
+			reason = "window_not_reached"
+		case errors.Is(err, models.ErrNoExtensionsLeft):
+			reason = "no_extensions_left"
+		case errors.Is(err, models.ErrAlreadyExpired):
+			reason = "already_expired"
+		default:
+			reason = "unknown"
+		}
+		pkgmetrics.ExtendRejectedTotal.WithLabelValues(claims.Category, claims.ChallengeName, reason).Inc()
 		return ctx.JSON(400, api.Error{Message: utils.Ptr(err.Error())})
 	}
 
+	pkgmetrics.ExtendOpsTotal.WithLabelValues(claims.Category, claims.ChallengeName).Inc()
 	s.expirySched.NotifyChange(d.ID)
 
 	return ctx.JSON(200, api.StatusResponse{
@@ -324,7 +348,7 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 	// Check if challenge is valid for team
 	if req.ChallengeName != claims.ChallengeName && claims.Role != "admin" {
 		zap.S().Errorf("Unauthorized attempt to terminate challenge %s for team %s", req.ChallengeName, claims.TeamID)
-		unauthorizedDeploymentsRequestsPerTeam.WithLabelValues(claims.TeamID).Inc()
+		pkgmetrics.UnauthorizedDeployRequestsTotal.WithLabelValues(claims.TeamID).Inc()
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
 
@@ -371,10 +395,22 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		terminateErr := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
-		if terminateErr != nil {
-			zap.S().Errorf("Failed to terminate instance: %v", terminateErr)
+		teamID := ""
+		if deployment.TeamID != nil {
+			teamID = *deployment.TeamID
 		}
+		start := time.Now()
+		terminateErr := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
+		duration := time.Since(start)
+		result := "success"
+		if terminateErr != nil {
+			result = "error"
+			zap.S().Errorf("Failed to terminate instance: %v", terminateErr)
+		} else {
+			pkgmetrics.DeploymentLifetimeSeconds.WithLabelValues(deployment.Category, deployment.ChallengeName).Observe(time.Since(deployment.CreatedAt).Seconds())
+		}
+		pkgmetrics.TerminateDurationSeconds.WithLabelValues(deployment.Category, deployment.ChallengeName, teamID).Observe(duration.Seconds())
+		pkgmetrics.TerminateOpsTotal.WithLabelValues(deployment.Category, deployment.ChallengeName, result).Inc()
 	}()
 
 	return ctx.NoContent(200)

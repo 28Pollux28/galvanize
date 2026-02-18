@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	server "github.com/28Pollux28/galvanize/pkg"
 	"github.com/28Pollux28/galvanize/pkg/api"
 	"github.com/28Pollux28/galvanize/pkg/config"
+	pkgmetrics "github.com/28Pollux28/galvanize/pkg/metrics"
 	"github.com/28Pollux28/galvanize/pkg/scheduler"
 	"github.com/28Pollux28/galvanize/pkg/utils"
 	"github.com/28Pollux28/galvanize/pkg/worker"
@@ -25,6 +27,8 @@ import (
 	echojwt "github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -116,9 +120,39 @@ var serveCmd = &cobra.Command{
 			zap.S().Fatalf("Failed to initialize database: %v", err)
 		}
 
+		// Register the DB-backed deployment collector so Prometheus can report
+		// current deployment counts by status/challenge/team on each scrape.
+		prometheus.MustRegister(pkgmetrics.NewDeploymentCollector(db))
+
+		// Start dedicated metrics server on port 5001.
+		// This exposes all registered metrics (echoprometheus HTTP metrics +
+		// instancer_deploy/terminate_duration_seconds, instancer_deployments, etc.)
+		// on a separate port so scrape traffic does not mix with API traffic.
+		// Note: 404 responses on /status, /extend, and /terminate are expected
+		// (deployment not yet created) and should not trigger error alerts.
+		metricsSrv := &http.Server{
+			Addr:    ":5001",
+			Handler: metricsHandler(cfg.Instancer.Metrics.Username, cfg.Instancer.Metrics.Password, promhttp.Handler()),
+		}
+		go func() {
+			zap.S().Info("Starting metrics server on :5001")
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				zap.S().Errorf("Metrics server error: %v", err)
+			}
+		}()
+
 		challIdx, err := challenge.NewChallengeIndex(cfg.Instancer.ChallengeDir)
 		if err != nil {
 			zap.S().Fatalf("Failed to initialize challenge index: %v", err)
+		}
+		// Seed the challenge index gauge with the initial count.
+		{
+			challs := challIdx.GetAll()
+			counts := make(map[string]int, 8)
+			for _, ch := range challs {
+				counts[ch.Category]++
+			}
+			pkgmetrics.SetChallengesIndexed(counts)
 		}
 
 		// 6. Initialize Redis job queue and worker pool (if configured)
@@ -135,6 +169,9 @@ var serveCmd = &cobra.Command{
 			if queueErr != nil {
 				zap.S().Fatalf("Failed to connect to Redis: %v", queueErr)
 			}
+
+			// Register queue-depth collector now that we have a live queue.
+			prometheus.MustRegister(pkgmetrics.NewQueueCollector(jobQueue))
 
 			numWorkers := cfg.Instancer.NumWorkers
 			if numWorkers <= 0 {
@@ -201,6 +238,9 @@ var serveCmd = &cobra.Command{
 		if err := e.Shutdown(shutdownCtx); err != nil {
 			zap.S().Fatalf("Failed to shutdown server: %v", err)
 		}
+		if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+			zap.S().Warnf("Failed to shutdown metrics server: %v", err)
+		}
 		if err := srv.Wait(shutdownCtx); err != nil {
 			zap.S().Fatalf("Failed to wait for server shutdown: %v", err)
 		}
@@ -212,6 +252,28 @@ var serveCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+// metricsHandler wraps h with HTTP Basic Auth if a password is configured.
+// If password is empty the handler is returned as-is (no auth).
+func metricsHandler(username, password string, h http.Handler) http.Handler {
+	if password == "" {
+		return h
+	}
+	if username == "" {
+		username = "prometheus"
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		if !ok ||
+			subtle.ConstantTimeCompare([]byte(u), []byte(username)) != 1 ||
+			subtle.ConstantTimeCompare([]byte(p), []byte(password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="metrics"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func validatePort(port string) bool {

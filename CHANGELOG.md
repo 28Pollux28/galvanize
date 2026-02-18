@@ -2,6 +2,24 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Added
+- Prometheus metrics endpoint on port **5001** (`/metrics`) with optional HTTP Basic Auth (`instancer.metrics.username` / `instancer.metrics.password` in config)
+- Deployment count gauge (`instancer_deployments`) backed by the database, grouped by status / category / challenge / team
+- Deploy and terminate operation counters (`instancer_deploy_ops_total`, `instancer_terminate_ops_total`) with `result` label
+- Deploy and terminate duration histograms (`instancer_deploy_duration_seconds`, `instancer_terminate_duration_seconds`) with category / challenge / team labels
+- Deploy conflict counter (`instancer_deploy_conflict_total`) for 409 responses
+- Unauthorized deploy request counter (`instancer_unauthorized_deploy_requests_total`) per team
+- Extension operation counter (`instancer_extend_ops_total`) and rejection counter (`instancer_extend_rejected_total`) with `reason` label (`window_not_reached`, `no_extensions_left`, `already_expired`)
+- Deployment lifetime histogram (`instancer_deployment_lifetime_seconds`) recorded at termination time
+- Worker job retry counter (`instancer_job_retries_total`) and permanent failure counter (`instancer_job_permanent_failures_total`) with `job_type` label
+- Redis queue depth gauge (`instancer_queue_depth`) and queue wait time histogram (`instancer_job_queue_wait_seconds`) — only registered when Redis is configured
+- Challenge index size gauge (`instancer_challenges_indexed`) per category, updated on startup and on challenge reload
+- Grafana monitoring stack (`docker-compose.monitoring.yml`) with Prometheus + Grafana, pre-provisioned with a full dashboard covering all metrics
+- `make monitoring-up` / `make monitoring-down` targets
+
+### Fixed
+- TCP playbook (and any playbook using `{{ env | default({}) }}`): challenges without an `env` key in `deploy_parameters` no longer fail with *"environment must be a mapping"* — `env` is now normalised to an empty map before being passed to Ansible
+
 ## v0.4.0 (2026-02-18)
 - Add `/admin/team-deployments` endpoint to list all deployments grouped by team with deployment duration
 - Add `/admin/error-deployments` endpoint to list all deployments in error status

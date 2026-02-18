@@ -22,7 +22,11 @@ var (
 	DeploymentStatusError    = "error"
 	DeploymentStatusStopped  = "stopped"
 
-	ErrNotFound = errors.New("deployment not found")
+	ErrNotFound                  = errors.New("deployment not found")
+	ErrExtensionWindowNotReached = errors.New("cannot extend: extension window not reached")
+	ErrAlreadyExpired            = errors.New("deployment already expired")
+	ErrNoExtensionsLeft          = errors.New("no time extensions left")
+	ErrNoExpiration              = errors.New("deployment has no expiration time")
 )
 
 type Deployment struct {
@@ -182,14 +186,14 @@ func DeleteDeployment(db *gorm.DB, deployment *Deployment) error {
 
 func ExtendDeploymentExpiration(db *gorm.DB, deployment *Deployment, extension, extensionWindow time.Duration, maxExtensions int) error {
 	if deployment.ExpiresAt == nil {
-		return errors.New("deployment has no expiration time")
+		return ErrNoExpiration
 	}
 	timeLeft := time.Until(*deployment.ExpiresAt)
 	if timeLeft > extensionWindow {
-		return errors.New("cannot extend: extension window not reached")
+		return ErrExtensionWindowNotReached
 	}
 	if timeLeft <= 0 {
-		return errors.New("deployment already expired")
+		return ErrAlreadyExpired
 	}
 
 	if maxExtensions > -1 {
@@ -197,7 +201,7 @@ func ExtendDeploymentExpiration(db *gorm.DB, deployment *Deployment, extension, 
 			deployment.TimeExtensionLeft = maxExtensions
 		}
 		if deployment.TimeExtensionLeft <= 0 {
-			return errors.New("no time extensions left")
+			return ErrNoExtensionsLeft
 		}
 	}
 
