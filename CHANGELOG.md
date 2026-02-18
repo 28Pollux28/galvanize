@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+
+## v0.4.0 (2026-02-18)
 - Add `/admin/team-deployments` endpoint to list all deployments grouped by team with deployment duration
 - Add `/admin/error-deployments` endpoint to list all deployments in error status
 - Add `/admin/retry-deployment` endpoint to retry failed deployments (deploy, terminate, or delete)
