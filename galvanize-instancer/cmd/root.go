@@ -19,6 +19,10 @@ var rootCmd = &cobra.Command{
 	Long:  "Galvanize Instancer is an instancer using Ansible to deploy CTFs challenges. CTFd connects to it to deploy challenges using the Zync plugin",
 }
 
+func SetVersion(version string) {
+	rootCmd.Version = version
+}
+
 var cfgFile string
 
 var (

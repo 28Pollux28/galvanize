@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+### Added
+- Add `--version` / `-v` flag to display the current version
 
 ## v0.5.2 (2026-02-19)
 ### Fixed
