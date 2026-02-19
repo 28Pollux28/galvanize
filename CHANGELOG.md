@@ -2,6 +2,8 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+## v0.5.1 (2026-02-19)
+
 ### Fixed
 - Variable redeclaration made sanitization of compose project name not work for non unique challenge names
 - Small tweaks to grafana dashboard
