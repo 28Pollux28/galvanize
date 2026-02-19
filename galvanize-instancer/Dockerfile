@@ -1,6 +1,12 @@
 FROM golang:1.25 AS builder
 
 WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY ./galvanize-instancer/go.mod ./galvanize-instancer/go.sum ./
+RUN go mod download
+
+# Copy source code
 COPY ./galvanize-instancer .
 RUN go build -o galvanize .
 
