@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+### Added
+- Modify bump version script to automatically tag and commit to master
 
 ## v0.5.3 (2026-02-19)
 ### Added

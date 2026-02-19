@@ -41,12 +41,12 @@ help:
 	@echo "  api-gen       Generate API code from OpenAPI spec"
 	@echo "  api-spec      Generate OpenAPI spec from template"
 	@echo ""
-	@echo "  bump-patch    Bump patch version (e.g., 1.2.0 -> 1.2.1)"
-	@echo "  bump-minor    Bump minor version (e.g., 1.2.0 -> 1.3.0)"
-	@echo "  bump-major    Bump major version (e.g., 1.2.0 -> 2.0.0)"
+	@echo "  bump-patch    Bump patch version and commit/tag/push (e.g., 1.2.0 -> 1.2.1)"
+	@echo "  bump-minor    Bump minor version and commit/tag/push (e.g., 1.2.0 -> 1.3.0)"
+	@echo "  bump-major    Bump major version and commit/tag/push (e.g., 1.2.0 -> 2.0.0)"
 	@echo ""
 	@echo "  version       Show current version"
-	@echo "  tag           Create and push a git tag for the current version"
+	@echo "  tag           Create and push a git tag for the current version (manual)"
 
 ## install: Install Go dependencies
 install:
@@ -118,15 +118,15 @@ api-spec:
 api-gen: api-spec
 	cd $(INSTANCER_DIR) && $(GO) generate ./api/...
 
-## bump-patch: Bump patch version
+## bump-patch: Bump patch version and commit/tag/push
 bump-patch:
 	./scripts/bump_version.sh patch
 
-## bump-minor: Bump minor version
+## bump-minor: Bump minor version and commit/tag/push
 bump-minor:
 	./scripts/bump_version.sh minor
 
-## bump-major: Bump major version
+## bump-major: Bump major version and commit/tag/push
 bump-major:
 	./scripts/bump_version.sh major
 

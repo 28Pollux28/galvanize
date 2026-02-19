@@ -85,9 +85,44 @@ else
 fi
 
 echo "Generating API specification..."
+cd "$PROJECT_ROOT"
 make api-spec
 make api-gen
 
+# Check if we're on master branch
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$BRANCH" != "master" ]; then
+    echo "Error: Not on master branch (currently on $BRANCH)"
+    echo "Version files updated but not committed/tagged/pushed"
+    exit 1
+fi
+
+# Check if tag already exists
+if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
+    echo "Error: Tag v$NEW_VERSION already exists"
+    echo "Version files updated but not committed/tagged/pushed"
+    exit 1
+fi
+
+# Stage the modified files
+echo "Staging changes..."
+git add "$CONSTANTS_FILE" "$OPENAPI_FILE" "$CHANGELOG_FILE" "$PROJECT_ROOT/galvanize-instancer/pkg/api/api.gen.go"
+
+# Commit the changes
+echo "Committing changes..."
+git commit -m "Bump version to $NEW_VERSION"
+
+# Create and push the tag
+echo "Creating tag v$NEW_VERSION..."
+git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
+
+# Push commits and tags
+echo "Pushing to origin..."
+git push origin "$BRANCH"
+git push origin "v$NEW_VERSION"
+
 echo ""
-echo "Version bumped from $CURRENT_VERSION to $NEW_VERSION"
+echo "✓ Version bumped from $CURRENT_VERSION to $NEW_VERSION"
+echo "✓ Changes committed and pushed"
+echo "✓ Tag v$NEW_VERSION created and pushed"
 
