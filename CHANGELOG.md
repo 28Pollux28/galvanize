@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+
+## v0.5.2 (2026-02-19)
 ### Fixed
 - Pull policy prevented using local images
 
