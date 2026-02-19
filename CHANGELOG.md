@@ -1,6 +1,8 @@
 # Changelog
 
 ## vX.X.X (YYYY-MM-DD)
+
+## v0.5.5 (2026-02-20)
 ### Changed
 - Optimize Docker builds with layer caching for Go dependencies
 - Add GitHub Actions cache for Docker layers to speed up CI/CD builds
