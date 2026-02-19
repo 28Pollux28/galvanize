@@ -104,7 +104,7 @@
       },
       "targets": [
         {
-          "expr": "sum(instancer_deployments{status=~\"running|starting|stopping|error\"}) or vector(0)",
+          "expr": "sum(instancer_deployments{status=~\"running|starting|stopping\"}) or vector(0)",
           "instant": true,
           "datasource": {
             "type": "prometheus",
@@ -386,7 +386,8 @@
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "/^instancer_queue_depth or vector\\(0\\)$/"
         },
         "colorMode": "background",
         "graphMode": "none"

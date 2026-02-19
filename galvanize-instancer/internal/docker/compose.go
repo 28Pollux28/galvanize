@@ -41,7 +41,7 @@ func BuildComposeProject(unique bool, challengeName, teamID string) string {
 		composeProject = SanitizeProjectName(composeProject)
 	} else {
 		composeProject = "polypwn-" + challengeName + "-" + teamID
-		composeProject := SanitizeProjectName(composeProject)
+		composeProject = SanitizeProjectName(composeProject)
 		sum := sha1.New().Sum([]byte(composeProject))
 		hexSum := hex.EncodeToString(sum)
 		composeProject = composeProject + "-" + hexSum[:6]
