@@ -117,4 +117,3 @@ func (c *QueueCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, float64(n))
 }
-

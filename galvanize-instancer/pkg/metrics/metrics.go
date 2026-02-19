@@ -145,4 +145,3 @@ func SetChallengesIndexed(categoryCounts map[string]int) {
 		ChallengesIndexed.WithLabelValues(cat).Set(float64(count))
 	}
 }
-

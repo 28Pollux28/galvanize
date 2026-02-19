@@ -21,7 +21,7 @@
       community.docker.docker_compose_v2:
         definition: "{{ compose_definition }}"
         project_name: "{{ compose_project }}"
-        pull: always
+        pull: missing
       tags: create
 
     - name: Arrêt et suppression du docker-compose
