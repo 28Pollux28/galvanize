@@ -28,13 +28,26 @@ func (s *Server) ReloadChallenges(ctx echo.Context) error {
 
 	conf := s.confProv.GetConfig()
 	if err := s.challIdx.BuildIndex(conf.Instancer.ChallengeDir); err != nil {
-		zap.S().Errorf("Failed to reload challenges: %v", err)
+		// BuildIndex keeps the current index when it fails
+		zap.S().Errorf("Failed to reload challenges, keeping the current index: %v", err)
 		return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug(fmt.Sprintf("Failed to reload challenges: %v", err))})
 	}
 
 	updateChallengeIndexMetrics(s.challIdx)
-	zap.S().Infof("Challenges reloaded successfully")
-	return ctx.NoContent(200)
+
+	response := api.ReloadChallengesResponse{
+		Indexed: len(s.challIdx.GetAll()),
+		Skipped: make([]api.SkippedChallenge, 0),
+	}
+	for _, sk := range s.challIdx.Skipped() {
+		response.Skipped = append(response.Skipped, api.SkippedChallenge{Path: sk.Path, Reason: sk.Reason})
+	}
+	if len(response.Skipped) > 0 {
+		zap.S().Warnf("Challenges reloaded: %d indexed, %d skipped (see the errors above)", response.Indexed, len(response.Skipped))
+	} else {
+		zap.S().Infof("Challenges reloaded: %d indexed", response.Indexed)
+	}
+	return ctx.JSON(200, response)
 }
 
 func (s *Server) ConfigCheck(ctx echo.Context) error {

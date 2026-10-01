@@ -263,13 +263,17 @@ paths:
   /admin/reload-challs:
     post:
       summary: Reload challenges index
-      description: Reload challenges index from disk and update the inmemory index
+      description: Reload challenges index from disk and update the inmemory index. Challenge files that cannot be parsed, or that duplicate another challenge's category/name, are skipped and listed in the response; the other challenges are indexed. If the challenge directory cannot be read, the current index is kept and 500 is returned.
       operationId: reloadChallenges
       security:
         - bearerAuth: [ ]
       responses:
         '200':
           description: Reload successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadChallengesResponse'
         '401':
           description: Unauthorized
         '403':
@@ -549,6 +553,34 @@ components:
         - error_message
         - created_at
         - updated_at
+
+    ReloadChallengesResponse:
+      type: object
+      properties:
+        indexed:
+          type: integer
+          description: Number of challenges in the index after the reload.
+        skipped:
+          type: array
+          description: Challenge files left out of the index.
+          items:
+            $ref: '#/components/schemas/SkippedChallenge'
+      required:
+        - indexed
+        - skipped
+
+    SkippedChallenge:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path of the challenge file.
+        reason:
+          type: string
+          description: Why it was skipped.
+      required:
+        - path
+        - reason
 
     RetryDeploymentRequest:
       type: object

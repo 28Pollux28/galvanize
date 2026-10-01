@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/28Pollux28/galvanize/internal/auth"
 	"github.com/28Pollux28/galvanize/internal/challenge"
+	"github.com/28Pollux28/galvanize/pkg/api"
 	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -100,6 +102,7 @@ deploy_parameters:
 	err := srv.ReloadChallenges(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"indexed":1,"skipped":[]}`, rec.Body.String())
 }
 
 func TestReloadChallenges_Unauthorized(t *testing.T) {
@@ -162,13 +165,43 @@ deploy_parameters:
 	cfg.Instancer.ChallengeDir = "/nonexistent/path/that/does/not/exist"
 
 	claims := &auth.Claims{Role: "admin"}
-	ctx, _ := createEchoContextWithClaims(http.MethodPost, "/admin/reload-challenges", claims)
+	ctx, rec := createEchoContextWithClaims(http.MethodPost, "/admin/reload-challenges", claims)
 
-	// BuildIndex panics on a non-existent root dir because WalkDir passes
-	// a nil DirEntry when it can't stat the root path.
-	assert.Panics(t, func() {
-		_ = srv.ReloadChallenges(ctx)
-	})
+	err := srv.ReloadChallenges(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	// The index built at startup is kept
+	_, err = srv.challIdx.Get("web", "http")
+	assert.NoError(t, err)
+}
+
+func TestReloadChallenges_ReportsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	writeChallenge(t, dir, "web", `
+name: http
+category: web
+playbook_name: http
+type: zync
+deploy_parameters:
+  unique: false
+`)
+	srv, _ := newTestServer(t, dir)
+	writeChallenge(t, dir, "broken", "name: [unterminated\n")
+
+	claims := &auth.Claims{Role: "admin"}
+	ctx, rec := createEchoContextWithClaims(http.MethodPost, "/admin/reload-challenges", claims)
+
+	err := srv.ReloadChallenges(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp api.ReloadChallengesResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 1, resp.Indexed)
+	require.Len(t, resp.Skipped, 1)
+	assert.Equal(t, filepath.Join(dir, "broken/challenge.yml"), resp.Skipped[0].Path)
+	assert.NotEmpty(t, resp.Skipped[0].Reason)
 }
 
 func TestReloadChallenges_RefreshesIndex(t *testing.T) {
