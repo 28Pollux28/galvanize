@@ -37,4 +37,5 @@ EXPOSE 8080
 
 # Use tini as entrypoint to properly reap zombie SSH processes from Ansible
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["./galvanize", "serve", "8080", "-c", "config.yaml"]
+# The config is expected at data/config.yaml, as mounted by docker-compose.yml
+CMD ["./galvanize", "serve", "--port", "8080", "--config", "data/config.yaml"]
