@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/28Pollux28/galvanize/internal/ansible"
+	"github.com/28Pollux28/galvanize/internal/challenge"
+	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/28Pollux28/galvanize/pkg/models"
 	"github.com/28Pollux28/galvanize/pkg/worker"
 	"go.uber.org/zap"
@@ -22,7 +25,16 @@ type ExpiryScheduler struct {
 	rescheduleChan chan struct{}
 	wg             sync.WaitGroup // track ongoing terminations
 	jobQueue       *worker.Queue
+	direct         *directTermination
 	l              *zap.SugaredLogger
+}
+
+// directTermination holds what terminating a deployment in place needs, for
+// when no job queue is configured.
+type directTermination struct {
+	challIdx challenge.ChallengeIndexer
+	confProv config.Provider
+	deployer ansible.Deployer
 }
 
 func NewExpiryScheduler(db *gorm.DB, jobQueue *worker.Queue, logger *zap.SugaredLogger) *ExpiryScheduler {
@@ -34,6 +46,14 @@ func NewExpiryScheduler(db *gorm.DB, jobQueue *worker.Queue, logger *zap.Sugared
 		jobQueue:       jobQueue,
 		l:              logger,
 	}
+}
+
+// WithDirectTermination makes the scheduler terminate expired deployments
+// itself, as the API does, when it has no job queue: without one (Redis not
+// configured), expired deployments were only marked as errors.
+func (s *ExpiryScheduler) WithDirectTermination(challIdx challenge.ChallengeIndexer, confProv config.Provider, deployer ansible.Deployer) *ExpiryScheduler {
+	s.direct = &directTermination{challIdx: challIdx, confProv: confProv, deployer: deployer}
+	return s
 }
 
 func (s *ExpiryScheduler) Start(ctx context.Context) {
@@ -199,6 +219,14 @@ func (s *ExpiryScheduler) terminateDeployment(deploymentID uint) {
 			_ = models.UpdateDeploymentStatus(s.db, &deployment, models.DeploymentStatusError, "", "failed to enqueue termination job: "+err.Error())
 		} else {
 			s.l.Infof("submitted termination job for deployment %d (team: %s, challenge: %s/%s)", deploymentID, teamID, deployment.Category, deployment.ChallengeName)
+		}
+	} else if s.direct != nil {
+		// TerminateDeployment marks the deployment as an error when it fails
+		conf := s.direct.confProv.GetConfig()
+		if err := models.TerminateDeployment(s.db, s.direct.challIdx, s.direct.deployer, conf, &deployment); err != nil {
+			s.l.Errorf("failed to terminate expired deployment %d: %v", deploymentID, err)
+		} else {
+			s.l.Infof("terminated expired deployment %d (challenge: %s/%s)", deploymentID, deployment.Category, deployment.ChallengeName)
 		}
 	} else {
 		s.l.Warnf("no job queue available, cannot terminate deployment %d", deploymentID)

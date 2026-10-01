@@ -198,6 +198,10 @@ var serveCmd = &cobra.Command{
 
 		// Initialize scheduler with job queue (can be nil if Redis not configured)
 		expirySched := scheduler.NewExpiryScheduler(db, jobQueue, zap.S().Named("ExpiryScheduler"))
+		if jobQueue == nil {
+			// Without Redis, expired deployments are terminated in place
+			expirySched.WithDirectTermination(challIdx, confProv, &ansible.AnsibleDeployer{})
+		}
 
 		// 7. Server Init via DI
 		srv := server.NewServerWithOpts(server.ServerOpts{
