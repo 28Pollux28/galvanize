@@ -27,6 +27,12 @@ func generateRandomID() string {
 // BuildResourceOverrides converts merged ResourceLimits into a map suitable
 // for Ansible's combine filter. The resulting dict is merged into each Docker
 // Compose service definition by the playbooks.
+//
+// All limits, the PID limit included, go under deploy.resources.limits.
+// Docker Compose 2.38 and later reject a service that sets the service-level
+// pids_limit next to deploy.resources.limits ("can't set distinct values on
+// 'pids_limit' and 'deploy.resources.limits.pids'"), which made every
+// deployment with a PID limit and a CPU or memory limit fail.
 func BuildResourceOverrides(rl config.ResourceLimits) map[string]interface{} {
 	limits := map[string]interface{}{}
 	if rl.CPUs != "" {
@@ -34,6 +40,9 @@ func BuildResourceOverrides(rl config.ResourceLimits) map[string]interface{} {
 	}
 	if rl.Memory != "" {
 		limits["memory"] = rl.Memory
+	}
+	if rl.PidsLimit > 0 {
+		limits["pids"] = rl.PidsLimit
 	}
 
 	overrides := map[string]interface{}{}
@@ -43,9 +52,6 @@ func BuildResourceOverrides(rl config.ResourceLimits) map[string]interface{} {
 				"limits": limits,
 			},
 		}
-	}
-	if rl.PidsLimit > 0 {
-		overrides["pids_limit"] = rl.PidsLimit
 	}
 	return overrides
 }

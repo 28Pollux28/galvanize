@@ -74,7 +74,7 @@ type AnsibleConfig struct {
 }
 
 // ResourceLimits defines container resource constraints applied via Docker Compose.
-// CPUs and Memory map to deploy.resources.limits; PidsLimit maps to the service-level pids_limit.
+// All three map to deploy.resources.limits (cpus, memory, pids) in Docker Compose.
 type ResourceLimits struct {
 	CPUs      string `mapstructure:"cpus" yaml:"cpus,omitempty"`           // e.g. "0.5", "1", "2"
 	Memory    string `mapstructure:"memory" yaml:"memory,omitempty"`       // e.g. "256M", "512M", "1G"

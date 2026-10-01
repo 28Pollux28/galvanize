@@ -2,6 +2,9 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Fixed
+- Deployments failing on Docker Compose 2.38+ with `can't set distinct values on 'pids_limit' and 'deploy.resources.limits.pids'`: the PID limit is now set as `deploy.resources.limits.pids`, next to the CPU and memory limits, instead of the service-level `pids_limit`. The `custom_compose` playbook drops a `pids_limit` set in the challenge's own compose file, so Galvanize's limit applies as before
+
 ## v0.7.1 (2026-06-02)
 
 ### Added
