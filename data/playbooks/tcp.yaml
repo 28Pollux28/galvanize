@@ -27,7 +27,6 @@
         compose_definition:
           services:
             tcp: "{{ _tcp_service }}"
-          networks: "{{ {traefik_network: {'external': true}} }}"
       tags:
         - create
         - delete

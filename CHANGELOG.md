@@ -8,6 +8,7 @@
 - A panic in a request handler now returns a 500 response and is logged with its stack trace: the recovery middleware was commented out, so the connection was dropped without a response
 - `/admin/deploy-all` now lists the category and name of each challenge it deploys: its `challenges` entries were empty (`{"category": "", "challenge_name": ""}`). `/admin/deploy-all` and `/admin/terminate-all` return `"challenges": []` instead of `null` when there is nothing to do
 - `/extend` refuses a deployment that is not running (starting, stopping or failed) with a 400 "deployment is not running", counted as `not_running` in the extension rejection metric: it extended any deployment and always answered with status `running`
+- The `tcp` playbook no longer requires `traefik_network`: it declared that network in the compose definition although TCP services run on the bridge network and never join it, so TCP challenges failed to deploy when it was not set
 
 ## v0.7.2 (2026-10-01)
 
