@@ -57,7 +57,7 @@ func BuildResourceOverrides(rl config.ResourceLimits) map[string]interface{} {
 }
 
 func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Challenge, teamID string, params map[string]interface{}) (execute.Executor, *bytes.Buffer) {
-	composeProject := docker.BuildComposeProject(challenge.Unique, challenge.Name, teamID)
+	composeProject := docker.BuildComposeProject(challenge.Unique, challenge.Category, challenge.Name, teamID)
 
 	// Ansible playbook options
 	playbookOpts := &playbook.AnsiblePlaybookOptions{
@@ -79,6 +79,13 @@ func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Chall
 	// Add deploy parameters to extra vars
 	maps.Copy(playbookOpts.ExtraVars, params)
 	maps.Copy(playbookOpts.ExtraVars, conf.Instancer.ExtraDeploymentParameters)
+
+	// Instances started by Galvanize v0.7.1 or earlier used another project
+	// name. The playbooks' delete tasks also remove a project left under that
+	// name, so upgrading does not leave running instances behind.
+	if legacy := docker.LegacyComposeProject(challenge.Unique, challenge.Name, teamID); legacy != composeProject {
+		playbookOpts.ExtraVars["legacy_compose_project"] = legacy
+	}
 
 	// Merge resource limits (challenge overrides config defaults) and pass to Ansible
 	merged := config.MergeResourceLimits(conf.Instancer.DefaultResourceLimits, challenge.ResourceLimits)

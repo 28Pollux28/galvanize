@@ -34,17 +34,52 @@ func SanitizeProjectName(name string) string {
 	return s
 }
 
-func BuildComposeProject(unique bool, challengeName, teamID string) string {
-	var composeProject string
+// projectSuffixLen is the number of hex characters of the identity hash
+// appended to project names.
+const projectSuffixLen = 8
+
+// maxProjectNameLen keeps a project name usable as a single DNS label: it is
+// also the instance's subdomain (<project>.<instancer_host>).
+const maxProjectNameLen = 63
+
+// BuildComposeProject returns the Docker Compose project name of a challenge
+// instance, which also names its Traefik router and subdomain. It is made of
+// a readable part (category, challenge name and team), truncated so the whole
+// name fits a 63-character DNS label, and the first 8 hex characters of a
+// SHA-1 of the instance's identity. The hash keeps apart instances whose
+// readable parts are equal: same-named challenges in different categories,
+// names that only differ in characters sanitization removes, or names cut by
+// the truncation.
+func BuildComposeProject(unique bool, category, challengeName, teamID string) string {
+	var readable, identity string
 	if unique {
-		composeProject = "global-" + challengeName
-		composeProject = SanitizeProjectName(composeProject)
+		readable = "global-" + category + "-" + challengeName
+		identity = "unique\x00" + category + "\x00" + challengeName
 	} else {
-		composeProject = "polypwn-" + challengeName + "-" + teamID
-		composeProject = SanitizeProjectName(composeProject)
-		sum := sha1.New().Sum([]byte(composeProject))
-		hexSum := hex.EncodeToString(sum)
-		composeProject = composeProject + "-" + hexSum[:6]
+		readable = "polypwn-" + category + "-" + challengeName + "-" + teamID
+		identity = "team\x00" + category + "\x00" + challengeName + "\x00" + teamID
 	}
-	return composeProject
+
+	sum := sha1.Sum([]byte(identity))
+	suffix := hex.EncodeToString(sum[:])[:projectSuffixLen]
+
+	readable = SanitizeProjectName(readable)
+	if maxReadable := maxProjectNameLen - 1 - projectSuffixLen; len(readable) > maxReadable {
+		readable = strings.TrimRight(readable[:maxReadable], "-_")
+	}
+	return readable + "-" + suffix
+}
+
+// LegacyComposeProject returns the project name Galvanize v0.7.1 and earlier
+// gave an instance. It ignored the category, and its suffix was constant:
+// sha1.New().Sum(b) appends the hash of nothing to b instead of hashing b,
+// so the first 6 hex characters were always those of "pol". It is kept only
+// so instances started before an upgrade can still be terminated.
+func LegacyComposeProject(unique bool, challengeName, teamID string) string {
+	if unique {
+		return SanitizeProjectName("global-" + challengeName)
+	}
+	composeProject := SanitizeProjectName("polypwn-" + challengeName + "-" + teamID)
+	sum := sha1.New().Sum([]byte(composeProject))
+	return composeProject + "-" + hex.EncodeToString(sum)[:6]
 }

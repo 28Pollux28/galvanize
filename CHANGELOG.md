@@ -2,8 +2,13 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Changed
+- Docker Compose project names, which also name the subdomains of instances, now include the category and a hash of the instance's identity (e.g. `polypwn-web-login-team1-<hash>`). Instances already running when upgrading keep their previous name: terminating them also removes the project under that name, so no containers are left behind
+
 ### Fixed
 - Deployments failing on Docker Compose 2.38+ with `can't set distinct values on 'pids_limit' and 'deploy.resources.limits.pids'`: the PID limit is now set as `deploy.resources.limits.pids`, next to the CPU and memory limits, instead of the service-level `pids_limit`. The `custom_compose` playbook drops a `pids_limit` set in the challenge's own compose file, so Galvanize's limit applies as before
+- Same-named challenges in different categories no longer collide: the category is now part of the deploy and terminate check against the JWT (a token for `web/login` cannot deploy or terminate `pwn/login`), of the per-instance lock, and of the Docker Compose project name
+- Compose project names end with a real hash of the instance's identity: the previous suffix was always `706f6c`, since `sha1.New().Sum(name)` appended the hash of nothing to the name instead of hashing it. Names are also cut to fit a 63-character DNS label
 
 ## v0.7.1 (2026-06-02)
 

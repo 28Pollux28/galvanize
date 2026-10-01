@@ -45,3 +45,14 @@
         project_name: "{{ compose_project }}"
         state: absent
       tags: delete
+
+    # Instances started by Galvanize v0.7.1 or earlier have another project
+    # name (legacy_compose_project, set when it differs): remove such a
+    # leftover too. A no-op when there is none, and never fails the run.
+    - name: Remove an instance left under its previous project name
+      ansible.builtin.command: "docker compose -p {{ legacy_compose_project }} down --remove-orphans"
+      when: legacy_compose_project is defined
+      changed_when: false
+      failed_when: false
+      tags:
+        - delete

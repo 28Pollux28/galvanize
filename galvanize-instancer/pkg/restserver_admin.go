@@ -96,7 +96,7 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 		return ctx.JSON(400, api.Error{Message: utils.Ptr("Challenge is not unique")})
 	}
 
-	id := chall.Name + "_unique"
+	id := instanceLockKey(chall.Category, chall.Name, "")
 	s.kmu.LockKey(id)
 	existingDeployment, err := models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
 	if err == nil && existingDeployment != nil {

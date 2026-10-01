@@ -66,7 +66,7 @@ func applyComposeExposures(conf *config.Config, chall *challenge.Challenge, team
 		return nil, fmt.Errorf("compose definition has no services map")
 	}
 
-	project := docker.BuildComposeProject(chall.Unique, chall.Name, teamID)
+	project := docker.BuildComposeProject(chall.Unique, chall.Category, chall.Name, teamID)
 	domainRoot := conf.Instancer.InstancerHost
 	traefikNetwork, _ := conf.Instancer.ExtraDeploymentParameters[traefikNetworkParam].(string)
 
