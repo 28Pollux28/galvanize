@@ -246,6 +246,7 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 		return ctx.JSON(200, api.BulkOperationResponse{
 			Message:         "No unique challenges found",
 			ChallengesCount: 0,
+			Challenges:      []api.ChallengeCategoryResponse{},
 		})
 	}
 
@@ -273,7 +274,10 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 		}
 
 		deployed++
-		challenges = append(challenges, api.ChallengeCategoryResponse{})
+		challenges = append(challenges, api.ChallengeCategoryResponse{
+			Category:      chall.Category,
+			ChallengeName: chall.Name,
+		})
 
 		// Deploy in goroutine
 		go func(ch *challenge.Challenge) {
@@ -338,6 +342,7 @@ func (s *Server) TerminateAllAdminInstances(ctx echo.Context) error {
 		return ctx.JSON(200, api.BulkOperationResponse{
 			Message:         "No unique deployments found",
 			ChallengesCount: 0,
+			Challenges:      []api.ChallengeCategoryResponse{},
 		})
 	}
 
