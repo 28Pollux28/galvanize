@@ -76,12 +76,7 @@ func (s *ExpiryScheduler) fetchNextExpiries() {
 
 	window := time.Now().Add(s.lookahead)
 
-	var deployments []models.Deployment
-	err := s.db.Where("status = ? AND expires_at IS NOT NULL AND expires_at <= ? AND team_id IS NOT NULL", // Not null excludes unique deployments
-		"running", window).
-		Order("expires_at ASC").
-		Find(&deployments).Error
-
+	deployments, err := models.GetDeploymentsExpiringBy(s.db, window)
 	if err != nil {
 		s.l.Errorf("failed to fetch upcoming expirations: %v", err)
 		return

@@ -47,10 +47,21 @@ func (deployment *Deployment) BeforeDelete(tx *gorm.DB) (err error) {
 	return tx.Error
 }
 
-func GetExpiredDeployments(db *gorm.DB) ([]Deployment, error) {
+// GetDeploymentsExpiringBy returns the running team deployments that expire
+// at t or earlier, the soonest first. Unique (shared) deployments have no
+// team and are never expired, so they are left out.
+func GetDeploymentsExpiringBy(db *gorm.DB, t time.Time) ([]Deployment, error) {
 	var deployments []Deployment
-	result := db.Where("status = ? AND expired_at <= ?", DeploymentStatusRunning, time.Now()).Find(&deployments)
+	result := db.Where("status = ? AND expires_at IS NOT NULL AND expires_at <= ? AND team_id IS NOT NULL",
+		DeploymentStatusRunning, t).
+		Order("expires_at ASC").
+		Find(&deployments)
 	return deployments, result.Error
+}
+
+// GetExpiredDeployments returns the running team deployments already expired.
+func GetExpiredDeployments(db *gorm.DB) ([]Deployment, error) {
+	return GetDeploymentsExpiringBy(db, time.Now())
 }
 
 func GetDeployment(db *gorm.DB, category, challengeName, teamID string, lock bool) (*Deployment, error) {

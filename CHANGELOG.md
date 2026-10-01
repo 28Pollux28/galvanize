@@ -14,6 +14,7 @@
 - One invalid `challenge.yml` no longer takes every challenge down: it stopped Galvanize from starting, or made `/admin/reload-challs` fail. Files that cannot be parsed (including a bad compose file), unreadable directories and challenges declaring an already indexed `category/name` are now skipped and logged, and the other challenges are indexed
 - A missing or unreadable challenge directory makes `BuildIndex` return an error instead of panicking; a failed reload keeps the current index
 - `randomized_port_min` and `randomized_port_max` are now honored: randomized host ports were always picked from 20000-60999. Each bound still defaults (20000 and 60999) when unset; an invalid range (outside 1-65535, or a minimum above the maximum) fails startup, and a config reload with one keeps the current config. When random picks keep colliding, a free port of the range is taken in order, so a nearly full range is still used up
+- `models.GetExpiredDeployments` queried a column that does not exist (`expired_at` instead of `expires_at`), so it always failed. It now shares `models.GetDeploymentsExpiringBy` with the expiry scheduler, and like it leaves out unique deployments, which never expire
 
 ## v0.7.1 (2026-06-02)
 
