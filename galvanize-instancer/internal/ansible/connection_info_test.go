@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/28Pollux28/galvanize/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,7 @@ func TestNormalizePublishedPorts_ExtractsOptionalProtocolHints(t *testing.T) {
 		},
 	}
 
-	normalized, hints, bindings := normalizePublishedPortsWithState(params, false, nil, false)
+	normalized, hints, bindings := normalizePublishedPortsWithState(params, false, nil, false, defaultPortRange)
 
 	assert.Equal(t, "example:latest", normalized["image"])
 	assert.Empty(t, bindings)
@@ -76,7 +77,7 @@ func TestNormalizePublishedPorts_RandomizeHostPorts_WhenEnabled(t *testing.T) {
 		},
 	}
 
-	normalized, hints, bindings := normalizePublishedPortsWithState(params, true, nil, true)
+	normalized, hints, bindings := normalizePublishedPortsWithState(params, true, nil, true, defaultPortRange)
 	ports, ok := normalized["published_ports"].([]interface{})
 	require.True(t, ok)
 	require.Len(t, ports, 4)
@@ -102,6 +103,8 @@ func TestNormalizePublishedPorts_RandomizeHostPorts_WhenEnabled(t *testing.T) {
 	assert.NotEmpty(t, bindings)
 }
 
+var defaultPortRange = portRange{lo: config.DefaultRandomizedPortMin, hi: config.DefaultRandomizedPortMax}
+
 func isRandomBindingFor(portDef string, target string) bool {
 	parts := strings.Split(portDef, ":")
 	if len(parts) != 2 {
@@ -114,5 +117,5 @@ func isRandomBindingFor(portDef string, target string) bool {
 	if err != nil {
 		return false
 	}
-	return hostPort >= 20000 && hostPort <= 60999
+	return defaultPortRange.contains(hostPort)
 }

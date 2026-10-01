@@ -1,6 +1,7 @@
 package ansible
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -48,9 +49,14 @@ func loadPortBindingsFromDB(dbPath, deploymentKey string) map[string]int {
 	return bindings
 }
 
-func ensureRandomPortBindingsInDB(dbPath, deploymentKey string, containerPorts []string) map[string]int {
+// ensureRandomPortBindingsInDB returns the host ports of the deployment's
+// randomized container ports, reserving a free one of ports for each container
+// port that has none yet. It fails when the store cannot be opened or ports
+// has no free port left, rather than leaving the container port to an
+// ephemeral host port outside the configured range.
+func ensureRandomPortBindingsInDB(dbPath, deploymentKey string, containerPorts []string, ports portRange) (map[string]int, error) {
 	if dbPath == "" || deploymentKey == "" || len(containerPorts) == 0 {
-		return map[string]int{}
+		return map[string]int{}, nil
 	}
 
 	portBindingDBMu.Lock()
@@ -58,7 +64,7 @@ func ensureRandomPortBindingsInDB(dbPath, deploymentKey string, containerPorts [
 
 	db, err := openPortBindingDB(dbPath)
 	if err != nil {
-		return map[string]int{}
+		return nil, fmt.Errorf("open port bindings store: %w", err)
 	}
 
 	result := map[string]int{}
@@ -74,16 +80,20 @@ func ensureRandomPortBindingsInDB(dbPath, deploymentKey string, containerPorts [
 			continue
 		}
 
-		hostPort := reserveRandomHostPort(db, deploymentKey, containerPort)
-		if hostPort > 0 {
-			result[containerPort] = hostPort
+		hostPort := reserveRandomHostPort(db, deploymentKey, containerPort, ports)
+		if hostPort == 0 {
+			return nil, fmt.Errorf("no free host port left in the randomized port range %s for container port %s", ports, containerPort)
 		}
+		result[containerPort] = hostPort
 	}
 
-	return result
+	return result, nil
 }
 
-func reserveRandomHostPort(db *gorm.DB, deploymentKey, containerPort string) int {
+// reserveRandomHostPort records a host port of ports for the container port
+// and returns it, or 0 if none is free. Ports are tried at random, then in
+// order, so a nearly full range is still used up.
+func reserveRandomHostPort(db *gorm.DB, deploymentKey, containerPort string, ports portRange) int {
 	if db == nil || deploymentKey == "" || containerPort == "" {
 		return 0
 	}
@@ -95,49 +105,54 @@ func reserveRandomHostPort(db *gorm.DB, deploymentKey, containerPort string) int
 	}
 
 	for range 128 {
-		hostPort := randomHostPortFromDB(db)
-		if hostPort == 0 {
-			continue
-		}
-		record := portBindingRecord{
-			DeploymentKey: deploymentKey,
-			ContainerPort: containerPort,
-			HostPort:      hostPort,
-		}
-		res := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
-		if res.Error != nil {
-			continue
-		}
-		if res.RowsAffected == 1 {
+		if hostPort := tryReserveHostPort(db, deploymentKey, containerPort, ports.random()); hostPort != 0 {
 			return hostPort
-		}
-
-		// If insert was ignored, check whether our target mapping now exists.
-		var mapped portBindingRecord
-		if err := db.First(&mapped, "deployment_key = ? AND container_port = ?", deploymentKey, containerPort).Error; err == nil {
-			return mapped.HostPort
 		}
 	}
 
+	// Random picks kept colliding: take the first port no binding uses
+	var used []int
+	if err := db.Model(&portBindingRecord{}).Where("host_port BETWEEN ? AND ?", ports.lo, ports.hi).Pluck("host_port", &used).Error; err != nil {
+		return 0
+	}
+	taken := make(map[int]struct{}, len(used))
+	for _, p := range used {
+		taken[p] = struct{}{}
+	}
+	for port := ports.lo; port <= ports.hi; port++ {
+		if _, ok := taken[port]; ok {
+			continue
+		}
+		if hostPort := tryReserveHostPort(db, deploymentKey, containerPort, port); hostPort != 0 {
+			return hostPort
+		}
+	}
 	return 0
 }
 
-func randomHostPortFromDB(db *gorm.DB) int {
-	if db == nil {
+// tryReserveHostPort records hostPort for the container port unless another
+// binding uses it. It returns the container port's host port, which another
+// worker may have recorded meanwhile, or 0.
+func tryReserveHostPort(db *gorm.DB, deploymentKey, containerPort string, hostPort int) int {
+	if hostPort == 0 {
 		return 0
 	}
-	const minPort = 20000
-	const maxPort = 60999
-	const rangeSize = maxPort - minPort + 1
+	record := portBindingRecord{
+		DeploymentKey: deploymentKey,
+		ContainerPort: containerPort,
+		HostPort:      hostPort,
+	}
+	res := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
+	if res.Error == nil && res.RowsAffected == 1 {
+		return hostPort
+	}
 
-	var hostPort int
-	if err := db.Raw("SELECT CAST((ABS(RANDOM()) % ?) + ? AS INTEGER)", rangeSize, minPort).Scan(&hostPort).Error; err != nil {
-		return 0
+	// If insert was ignored, check whether our target mapping now exists.
+	var mapped portBindingRecord
+	if err := db.First(&mapped, "deployment_key = ? AND container_port = ?", deploymentKey, containerPort).Error; err == nil {
+		return mapped.HostPort
 	}
-	if hostPort < minPort || hostPort > maxPort {
-		return 0
-	}
-	return hostPort
+	return 0
 }
 
 func savePortBindingsToDB(dbPath, deploymentKey string, bindings map[string]int) {
