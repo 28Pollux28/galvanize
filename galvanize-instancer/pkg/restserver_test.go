@@ -855,3 +855,31 @@ func TestTerminateInstance_AdminCanTerminateAnychallenge(t *testing.T) {
 	waitForBackground(t, srv)
 	assert.Len(t, deployer.terminateCalls, 1)
 }
+
+func TestExtendInstance_NotRunning(t *testing.T) {
+	for _, status := range []string{models.DeploymentStatusStarting, models.DeploymentStatusStopping, models.DeploymentStatusError} {
+		t.Run(status, func(t *testing.T) {
+			srv := newTestServerWithMock(t, &mockDeployer{}, newMockIndexer(httpChallenge()))
+			cfg := defaultTestConfig()
+
+			d, err := models.CreateDeployment(srv.db, "http", "team1", "web", cfg.Instancer.DeploymentTTL, cfg.Instancer.DeploymentMaxExtensions)
+			require.NoError(t, err)
+			d.Status = status
+			// Inside the extension window, with extensions left
+			d.ExpiresAt = utils.Ptr(time.Now().Add(5 * time.Minute))
+			require.NoError(t, srv.db.Save(d).Error)
+
+			claims := &auth.Claims{TeamID: "team1", ChallengeName: "http", Category: "web", Role: "user"}
+			ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/extend", claims, "")
+
+			require.NoError(t, srv.ExtendInstance(ctx))
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Contains(t, rec.Body.String(), "deployment is not running")
+
+			got, err := models.GetDeploymentByID(srv.db, d.ID)
+			require.NoError(t, err)
+			assert.WithinDuration(t, *d.ExpiresAt, *got.ExpiresAt, time.Second, "not extended")
+			assert.Equal(t, d.TimeExtensionLeft, got.TimeExtensionLeft, "no extension used up")
+		})
+	}
+}

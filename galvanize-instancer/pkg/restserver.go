@@ -323,6 +323,8 @@ func (s *Server) ExtendInstance(ctx echo.Context) error {
 			reason = "no_extensions_left"
 		case errors.Is(err, models.ErrAlreadyExpired):
 			reason = "already_expired"
+		case errors.Is(err, models.ErrNotRunning):
+			reason = "not_running"
 		default:
 			reason = "unknown"
 		}
