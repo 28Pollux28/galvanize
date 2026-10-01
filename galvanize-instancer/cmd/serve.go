@@ -146,8 +146,6 @@ var serveCmd = &cobra.Command{
 		// 6. Initialize Redis job queue and worker pool (if configured)
 		var jobQueue *worker.Queue
 		var workerPool *worker.Pool
-		// Runs team requests and expiries without Redis; nil: the default deployer
-		var teamDeployer ansible.Deployer
 
 		if cfg.Instancer.Redis.Addr != "" {
 			var queueErr error
@@ -178,20 +176,11 @@ var serveCmd = &cobra.Command{
 				Logger:     zap.S().Named("WorkerPool"),
 			})
 			zap.S().Infof("Redis job queue enabled with %d workers", numWorkers)
-		} else {
-			// Team requests and expiries share max_concurrent_ansible slots;
-			// admin actions are not limited
-			limit := cfg.Instancer.MaxConcurrentAnsibleLimit()
-			teamDeployer = ansible.NewLimitedDeployer(&ansible.AnsibleDeployer{}, limit)
-			zap.S().Infof("Redis not configured, using direct goroutines for deployments (at most %d Ansible runs at a time for team requests and expiries)", limit)
 		}
 
 		// Initialize scheduler with job queue (can be nil if Redis not configured)
 		expirySched := scheduler.NewExpiryScheduler(db, jobQueue, zap.S().Named("ExpiryScheduler"))
-		if jobQueue == nil {
-			// Without Redis, expired deployments are terminated in place
-			expirySched.WithDirectTermination(challIdx, confProv, teamDeployer)
-		}
+		teamDeployer := configureQueueless(cfg, jobQueue, expirySched, challIdx, confProv)
 
 		// 7. Server Init via DI
 		srv := server.NewServerWithOpts(server.ServerOpts{
@@ -273,6 +262,22 @@ func metricsHandler(username, password string, h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// configureQueueless sets up running without a job queue (Redis not
+// configured): team requests and expiries then share a LimitedDeployer with
+// max_concurrent_ansible slots, which it returns, and the scheduler
+// terminates expired deployments itself with it. Admin actions keep the
+// unlimited deployer. With a job queue, it does nothing and returns nil.
+func configureQueueless(cfg *config.Config, jobQueue *worker.Queue, expirySched *scheduler.ExpiryScheduler, challIdx challenge.ChallengeIndexer, confProv config.Provider) ansible.Deployer {
+	if jobQueue != nil {
+		return nil
+	}
+	limit := cfg.Instancer.MaxConcurrentAnsibleLimit()
+	teamDeployer := ansible.NewLimitedDeployer(&ansible.AnsibleDeployer{}, limit)
+	expirySched.WithDirectTermination(challIdx, confProv, teamDeployer)
+	zap.S().Infof("Redis not configured, using direct goroutines for deployments (at most %d Ansible runs at a time for team requests and expiries)", limit)
+	return teamDeployer
 }
 
 // useMiddleware installs the request logger, panic recovery and CORS.

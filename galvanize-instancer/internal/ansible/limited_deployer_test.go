@@ -82,8 +82,23 @@ func TestLimitedDeployer_WaitingCallHonorsContext(t *testing.T) {
 	close(inner.release)
 }
 
+func TestLimitedDeployer_WaitingTerminateHonorsContext(t *testing.T) {
+	inner := &blockingDeployer{release: make(chan struct{})}
+	d := NewLimitedDeployer(inner, 1)
+	chall := &challenge.Challenge{Name: "login", Category: "web"}
+
+	go func() { _, _ = d.Deploy(context.Background(), &config.Config{}, chall, "a") }()
+	require.Eventually(t, func() bool { return inner.started.Load() == 1 }, time.Second, time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.ErrorIs(t, d.Terminate(ctx, &config.Config{}, chall, "b"), context.Canceled)
+	close(inner.release)
+}
+
 func TestNewLimitedDeployer_AtLeastOneSlot(t *testing.T) {
-	assert.Equal(t, 1, cap(NewLimitedDeployer(&slowDeployer{}, 0).slots))
+	assert.Equal(t, 1, NewLimitedDeployer(&slowDeployer{}, 0).Limit())
+	assert.Equal(t, 4, NewLimitedDeployer(&slowDeployer{}, 4).Limit())
 }
 
 type blockingDeployer struct {

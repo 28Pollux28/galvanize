@@ -56,6 +56,15 @@ func (s *ExpiryScheduler) WithDirectTermination(challIdx challenge.ChallengeInde
 	return s
 }
 
+// DirectTerminationDeployer returns the deployer set by
+// WithDirectTermination, or nil when expired deployments go to the job queue.
+func (s *ExpiryScheduler) DirectTerminationDeployer() ansible.Deployer {
+	if s.direct == nil {
+		return nil
+	}
+	return s.direct.deployer
+}
+
 func (s *ExpiryScheduler) Start(ctx context.Context) {
 	s.l.Debug("starting expiry scheduler")
 	s.fetchNextExpiries()

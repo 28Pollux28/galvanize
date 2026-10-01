@@ -48,3 +48,38 @@ func TestPortBindingsStore_ReusesConnection(t *testing.T) {
 	require.NoError(t, err2)
 	assert.Same(t, db, again, "one pool per database file")
 }
+
+// A store that cannot be created is reported, and not kept for later calls
+func TestPortBindingsStore_OpenFailureNotCached(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing-dir", "galvanize.db")
+
+	_, err := ensureRandomPortBindingsInDB(dbPath, "web/a:team0", []string{"22"}, portRange{lo: 35000, hi: 35009})
+	require.Error(t, err)
+
+	portBindingDBMu.Lock()
+	_, cached := portBindingDBs[dbPath]
+	portBindingDBMu.Unlock()
+	assert.False(t, cached)
+
+	// Once the directory exists, the store opens
+	require.NoError(t, os.MkdirAll(filepath.Dir(dbPath), 0o755))
+	b, err := ensureRandomPortBindingsInDB(dbPath, "web/a:team0", []string{"22"}, portRange{lo: 35000, hi: 35009})
+	require.NoError(t, err)
+	assert.Contains(t, b, "22")
+}
+
+// The file opens but its table cannot be created: the pool is closed and
+// not kept
+func TestPortBindingsStore_MigrationFailureNotCached(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "galvanize.db")
+	require.NoError(t, os.WriteFile(dbPath, []byte("this is not a SQLite database, just some text long enough to be read"), 0o600))
+
+	portBindingDBMu.Lock()
+	db, err := openPortBindingDB(dbPath)
+	_, cached := portBindingDBs[dbPath]
+	portBindingDBMu.Unlock()
+
+	require.Error(t, err)
+	assert.Nil(t, db)
+	assert.False(t, cached)
+}

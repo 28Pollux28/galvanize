@@ -27,6 +27,9 @@ func NewLimitedDeployer(inner Deployer, limit int) *LimitedDeployer {
 	return &LimitedDeployer{inner: inner, slots: make(chan struct{}, limit)}
 }
 
+// Limit returns the number of calls that can run at a time.
+func (d *LimitedDeployer) Limit() int { return cap(d.slots) }
+
 func (d *LimitedDeployer) acquire(ctx context.Context) error {
 	select {
 	case d.slots <- struct{}{}:
