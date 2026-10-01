@@ -2,6 +2,9 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Fixed
+- The default of `deployment_max_extensions` is now 3, as documented in `config.example.yaml`: the code defaulted to 4
+
 ## v0.7.2 (2026-10-01)
 
 ### Changed

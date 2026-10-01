@@ -54,7 +54,7 @@ func initConfig() {
 
 	viper.SetDefault("instancer.deployment_ttl", "1h")
 	viper.SetDefault("instancer.deployment_ttl_extension", "30m")
-	viper.SetDefault("instancer.deployment_max_extensions", 4)
+	viper.SetDefault("instancer.deployment_max_extensions", 3)
 	viper.SetDefault("instancer.deployment_extension_window", "30m")
 
 	if err := viper.ReadInConfig(); err != nil {
