@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -52,8 +53,8 @@ type InstancerConfig struct {
 	DeploymentMaxExtensions   int                    `mapstructure:"deployment_max_extensions,omitempty"`   // Maximum number of TTL extensions allowed
 	DeploymentExtensionWindow time.Duration          `mapstructure:"deployment_extension_window,omitempty"` // Time window before expiration when extension is allowed
 	RandomizePublishedPorts   bool                   `mapstructure:"randomize_published_ports,omitempty"`  // Randomize host ports for non-fixed TCP published_ports
-	RandomizedPortMin         int                    `mapstructure:"randomized_port_min,omitempty"`        // Lower bound for randomized host ports (default: 20000)
-	RandomizedPortMax         int                    `mapstructure:"randomized_port_max,omitempty"`        // Upper bound for randomized host ports (default: 60999)
+	RandomizedPortMin         int                    `mapstructure:"randomized_port_min,omitempty"`        // Lower bound for randomized host ports, included (default: 20000)
+	RandomizedPortMax         int                    `mapstructure:"randomized_port_max,omitempty"`        // Upper bound for randomized host ports, included (default: 60999)
 	MaxConcurrentAnsible      int                    `mapstructure:"max_concurrent_ansible,omitempty"`      // Maximum concurrent Ansible executions (default: 5) - deprecated, use NumWorkers
 	Redis                     RedisConfig            `mapstructure:"redis"`                                 // Redis configuration for job queue
 	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                  // Number of Ansible workers (default: 10)
@@ -74,7 +75,7 @@ type AnsibleConfig struct {
 }
 
 // ResourceLimits defines container resource constraints applied via Docker Compose.
-// CPUs and Memory map to deploy.resources.limits; PidsLimit maps to the service-level pids_limit.
+// All three map to deploy.resources.limits (cpus, memory, pids) in Docker Compose.
 type ResourceLimits struct {
 	CPUs      string `mapstructure:"cpus" yaml:"cpus,omitempty"`           // e.g. "0.5", "1", "2"
 	Memory    string `mapstructure:"memory" yaml:"memory,omitempty"`       // e.g. "256M", "512M", "1G"
@@ -97,6 +98,36 @@ func MergeResourceLimits(defaults, overrides ResourceLimits) ResourceLimits {
 	return result
 }
 
+// Default range of randomized host ports, bounds included
+const (
+	DefaultRandomizedPortMin = 20000
+	DefaultRandomizedPortMax = 60999
+)
+
+// RandomizedPortRange returns the range, bounds included, randomized host
+// ports are picked from: randomized_port_min and randomized_port_max, each
+// replaced by its default when unset.
+func (ic InstancerConfig) RandomizedPortRange() (lo, hi int) {
+	lo, hi = ic.RandomizedPortMin, ic.RandomizedPortMax
+	if lo == 0 {
+		lo = DefaultRandomizedPortMin
+	}
+	if hi == 0 {
+		hi = DefaultRandomizedPortMax
+	}
+	return lo, hi
+}
+
+// Validate checks the instancer settings that have no safe fallback.
+func (ic InstancerConfig) Validate() error {
+	lo, hi := ic.RandomizedPortRange()
+	if lo < 1 || hi > 65535 || lo > hi {
+		return fmt.Errorf("invalid randomized port range %d-%d: randomized_port_min and randomized_port_max must be between 1 and 65535, the minimum not above the maximum (defaults: %d-%d)",
+			lo, hi, DefaultRandomizedPortMin, DefaultRandomizedPortMax)
+	}
+	return nil
+}
+
 var (
 	current *Config
 	mu      sync.RWMutex
@@ -110,6 +141,9 @@ func Load() error {
 	cfg := &Config{}
 	if err := viper.Unmarshal(cfg); err != nil {
 		return err
+	}
+	if err := cfg.Instancer.Validate(); err != nil {
+		return fmt.Errorf("instancer: %w", err)
 	}
 	zap.S().Info("Config loaded successfully")
 	current = cfg

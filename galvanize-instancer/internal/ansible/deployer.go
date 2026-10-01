@@ -42,14 +42,19 @@ func (a *AnsibleDeployer) Deploy(ctx context.Context, conf *config.Config, chall
 	var lastErr error
 	key := deploymentKey(chall, teamID)
 	randomizePorts := conf.Instancer.RandomizePublishedPorts
+	ports := randomizedPortRange(conf)
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		existingBindings := loadPortBindingsFromDB(conf.Instancer.DBPath, key)
 		if randomizePorts {
 			randomizable := randomizableContainerPorts(chall.DeployParameters)
 			randomizable = append(randomizable, exposeTCPContainerPorts(chall.DeployParameters)...)
-			existingBindings = ensureRandomPortBindingsInDB(conf.Instancer.DBPath, key, randomizable)
+			reserved, err := ensureRandomPortBindingsInDB(conf.Instancer.DBPath, key, randomizable, ports)
+			if err != nil {
+				return "", fmt.Errorf("failed to reserve host ports: %w", err)
+			}
+			existingBindings = reserved
 		}
-		normalizedParams, protocolHints, _ := normalizePublishedPortsWithState(chall.DeployParameters, randomizePorts, existingBindings, false)
+		normalizedParams, protocolHints, _ := normalizePublishedPortsWithState(chall.DeployParameters, randomizePorts, existingBindings, false, ports)
 		if randomizePorts {
 			savePortBindingsToDB(conf.Instancer.DBPath, key, existingBindings)
 		}
@@ -105,7 +110,7 @@ func (a *AnsibleDeployer) Terminate(ctx context.Context, conf *config.Config, ch
 	randomizePorts := conf.Instancer.RandomizePublishedPorts
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		existingBindings := loadPortBindingsFromDB(conf.Instancer.DBPath, key)
-		normalizedParams, _, _ := normalizePublishedPortsWithState(chall.DeployParameters, randomizePorts, existingBindings, false)
+		normalizedParams, _, _ := normalizePublishedPortsWithState(chall.DeployParameters, randomizePorts, existingBindings, false, randomizedPortRange(conf))
 		if _, err := applyComposeExposures(conf, chall, teamID, normalizedParams, existingBindings); err != nil {
 			return fmt.Errorf("failed to apply compose exposures: %w", err)
 		}

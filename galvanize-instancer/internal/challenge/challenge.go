@@ -112,14 +112,23 @@ type ChallengeIndexer interface {
 	GetAllUnique() []*Challenge
 	GetAll() []*Challenge
 	BuildIndex(baseDir string) error
+	// Skipped lists the challenge files the last BuildIndex left out.
+	Skipped() []SkippedChallenge
+}
+
+// SkippedChallenge is a challenge file left out of the index, and why.
+type SkippedChallenge struct {
+	Path   string
+	Reason string
 }
 
 // Compile-time check that ChallengeIndex implements ChallengeIndexer.
 var _ ChallengeIndexer = (*ChallengeIndex)(nil)
 
 type ChallengeIndex struct {
-	mu     sync.RWMutex
-	challs map[string]*Challenge
+	mu      sync.RWMutex
+	challs  map[string]*Challenge
+	skipped []SkippedChallenge
 }
 
 type Challenge struct {
@@ -144,32 +153,79 @@ func NewChallengeIndex(baseDir string) (*ChallengeIndex, error) {
 	return idx, nil
 }
 
+// BuildIndex (re)builds the index from the challenge files under baseDir.
+//
+// A challenge file that cannot be read or parsed, or that declares the same
+// category/name as one already indexed, is skipped and reported (Skipped and
+// the logs) instead of failing the whole index: one bad challenge.yml would
+// otherwise stop Galvanize from starting, or make every reload fail.
+// baseDir itself must be readable; otherwise an error is returned and the
+// current index is kept as it is.
 func (idx *ChallengeIndex) BuildIndex(baseDir string) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
-	idx.challs = make(map[string]*Challenge)
+	challs := make(map[string]*Challenge)
+	paths := make(map[string]string)
+	var skipped []SkippedChallenge
+	skip := func(path, reason string) {
+		skipped = append(skipped, SkippedChallenge{Path: path, Reason: reason})
+		zap.S().Errorf("Skipping challenge %s: %s", path, reason)
+	}
+
 	err := filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "example") {
-			return filepath.SkipDir
+		if err != nil {
+			if path == baseDir {
+				return err
+			}
+			skip(path, err.Error())
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-		if err != nil || d.IsDir() || (d.Name() != "challenge.yml" && d.Name() != "challenge.yaml") {
-			return err
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "example" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "challenge.yml" && d.Name() != "challenge.yaml" {
+			return nil
 		}
 		// Parse challenge.yml to get category and name
 		chall, err := parseChallenge(path)
 		if err != nil {
-			return fmt.Errorf("parse %s: %w", path, err)
+			skip(path, err.Error())
+			return filepath.SkipDir
 		}
 		if chall.Type != "zync" {
 			return filepath.SkipDir
 		}
 		key := chall.Category + "/" + chall.Name
-		idx.challs[key] = chall
+		if first, ok := paths[key]; ok {
+			skip(path, fmt.Sprintf("duplicate of %s (both declare %s)", first, key))
+			return filepath.SkipDir
+		}
+		challs[key] = chall
+		paths[key] = path
 		zap.S().Infof("Registered challenge: %s", key)
 
 		return filepath.SkipDir
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("index %s: %w", baseDir, err)
+	}
+
+	idx.mu.Lock()
+	idx.challs = challs
+	idx.skipped = skipped
+	idx.mu.Unlock()
+	return nil
+}
+
+// Skipped returns the challenge files the last successful BuildIndex left out.
+func (idx *ChallengeIndex) Skipped() []SkippedChallenge {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return append([]SkippedChallenge(nil), idx.skipped...)
 }
 
 func (idx *ChallengeIndex) Get(category, name string) (*Challenge, error) {

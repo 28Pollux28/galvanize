@@ -126,6 +126,13 @@ func (s *Server) Wait(ctx context.Context) error {
 //	log.Printf("Metrics synced. Found %.0f active challenge containers.", count)
 //}
 
+// instanceLockKey identifies a challenge instance for the deploy lock.
+// Challenge names are only unique within a category, so the category is part
+// of it; teamID is empty for unique (shared) instances.
+func instanceLockKey(category, challengeName, teamID string) string {
+	return category + "/" + challengeName + ":" + teamID
+}
+
 func (s *Server) GetHealth(ctx echo.Context) error {
 	return ctx.JSON(200, map[string]string{"status": "ok"})
 }
@@ -141,8 +148,9 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		return ctx.JSON(400, api.Error{Message: utils.Ptr("Invalid request")})
 	}
 	zap.S().Infof("Deploy request received for challenge %s for team %s", req.ChallengeName, claims.TeamID)
-	// Check if challenge is valid for team
-	if req.ChallengeName != claims.ChallengeName && claims.Role != "admin" {
+	// Check if challenge is valid for team. Challenge names are only unique
+	// within a category, so the category must match too.
+	if (req.ChallengeName != claims.ChallengeName || req.Category != claims.Category) && claims.Role != "admin" {
 		zap.S().Errorf("Unauthorized attempt to deploy challenge %s for team %s", req.ChallengeName, claims.TeamID)
 		pkgmetrics.UnauthorizedDeployRequestsTotal.WithLabelValues(claims.TeamID).Inc()
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
@@ -156,7 +164,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		zap.S().Errorf("Attempt to deploy unique challenge %s for team %s", req.ChallengeName, claims.TeamID)
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
-	id := chall.Name + claims.TeamID
+	id := instanceLockKey(chall.Category, chall.Name, claims.TeamID)
 	s.kmu.LockKey(id)
 	existingDeployment, err := models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
 	if err == nil && existingDeployment != nil {
@@ -345,8 +353,8 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return ctx.JSON(400, api.Error{Message: utils.Ptr("Invalid request")})
 	}
-	// Check if challenge is valid for team
-	if req.ChallengeName != claims.ChallengeName && claims.Role != "admin" {
+	// Check if challenge is valid for team (name and category, see DeployInstance)
+	if (req.ChallengeName != claims.ChallengeName || req.Category != claims.Category) && claims.Role != "admin" {
 		zap.S().Errorf("Unauthorized attempt to terminate challenge %s for team %s", req.ChallengeName, claims.TeamID)
 		pkgmetrics.UnauthorizedDeployRequestsTotal.WithLabelValues(claims.TeamID).Inc()
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})

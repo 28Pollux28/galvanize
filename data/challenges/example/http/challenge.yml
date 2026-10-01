@@ -6,7 +6,7 @@ type: zync
 
 # The 'http' playbook deploys a single container behind Traefik.
 # Traefik routes traffic based on a generated subdomain:
-#   <compose_project>.<instancer_host>  (e.g. polypwn-example-http-team1-a3f2c1.challs.example.com)
+#   <compose_project>.<instancer_host>  (e.g. polypwn-web-example-http-team1-9448f1e7.challs.example.com)
 playbook_name: http
 
 deploy_parameters:

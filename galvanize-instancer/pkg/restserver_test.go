@@ -113,7 +113,8 @@ func (m *mockChallengeIndexer) GetAll() []*challenge.Challenge {
 	return challs
 }
 
-func (m *mockChallengeIndexer) BuildIndex(_ string) error { return nil }
+func (m *mockChallengeIndexer) BuildIndex(_ string) error             { return nil }
+func (m *mockChallengeIndexer) Skipped() []challenge.SkippedChallenge { return nil }
 
 var _ challenge.ChallengeIndexer = (*mockChallengeIndexer)(nil)
 
@@ -277,6 +278,36 @@ func TestDeployInstance_Forbidden_WrongChallenge(t *testing.T) {
 	err := srv.DeployInstance(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestDeployInstance_Forbidden_WrongCategory(t *testing.T) {
+	deployer := &mockDeployer{}
+	srv := newTestServerWithMock(t, deployer, newMockIndexer(httpChallenge()))
+
+	// Same challenge name, but the token is for another category's challenge
+	claims := &auth.Claims{TeamID: "team1", ChallengeName: "http", Category: "pwn", Role: "user"}
+	body := `{"challenge_name":"http","category":"web"}`
+	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/deploy", claims, body)
+
+	err := srv.DeployInstance(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Empty(t, deployer.deployCalls)
+}
+
+func TestDeployInstance_AdminCanDeployOtherCategory(t *testing.T) {
+	deployer := &mockDeployer{}
+	srv := newTestServerWithMock(t, deployer, newMockIndexer(httpChallenge()))
+
+	claims := &auth.Claims{TeamID: "team1", ChallengeName: "http", Category: "pwn", Role: "admin"}
+	body := `{"challenge_name":"http","category":"web"}`
+	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/deploy", claims, body)
+
+	err := srv.DeployInstance(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	waitForBackground(t, srv)
+	assert.Len(t, deployer.deployCalls, 1)
 }
 
 func TestDeployInstance_AdminCanDeployAnychallenge(t *testing.T) {
@@ -715,6 +746,19 @@ func TestTerminateInstance_Forbidden_WrongChallenge(t *testing.T) {
 	srv := newTestServerWithMock(t, deployer, newMockIndexer(httpChallenge()))
 
 	claims := &auth.Claims{TeamID: "team1", ChallengeName: "other", Category: "web", Role: "user"}
+	body := `{"challenge_name":"http","category":"web"}`
+	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/terminate", claims, body)
+
+	err := srv.TerminateInstance(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestTerminateInstance_Forbidden_WrongCategory(t *testing.T) {
+	deployer := &mockDeployer{}
+	srv := newTestServerWithMock(t, deployer, newMockIndexer(httpChallenge()))
+
+	claims := &auth.Claims{TeamID: "team1", ChallengeName: "http", Category: "pwn", Role: "user"}
 	body := `{"challenge_name":"http","category":"web"}`
 	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/terminate", claims, body)
 

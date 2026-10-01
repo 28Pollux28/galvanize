@@ -146,6 +146,9 @@ var serveCmd = &cobra.Command{
 		if err != nil {
 			zap.S().Fatalf("Failed to initialize challenge index: %v", err)
 		}
+		if skipped := challIdx.Skipped(); len(skipped) > 0 {
+			zap.S().Warnf("%d challenge file(s) skipped (see the errors above); the other challenges are available", len(skipped))
+		}
 		// Seed the challenge index gauge with the initial count.
 		{
 			challs := challIdx.GetAll()

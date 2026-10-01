@@ -1,6 +1,7 @@
 package challenge
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,11 +153,113 @@ deploy_parameters:
 }
 
 func TestBuildIndex_InvalidDir(t *testing.T) {
-	// WalkDir passes a nil DirEntry when the root path doesn't exist,
-	// which causes a panic in BuildIndex before the error can be returned.
-	assert.Panics(t, func() {
-		_, _ = NewChallengeIndex("/nonexistent/path/that/does/not/exist")
-	})
+	_, err := NewChallengeIndex("/nonexistent/path/that/does/not/exist")
+	assert.Error(t, err)
+}
+
+const validChall = `
+name: %s
+category: %s
+playbook_name: http
+type: zync
+deploy_parameters:
+  unique: false
+`
+
+func TestBuildIndex_SkipsInvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	writeChallenge(t, dir, "web/ok", fmt.Sprintf(validChall, "ok", "web"))
+	writeChallenge(t, dir, "web/broken", "name: [unterminated\n")
+	writeChallenge(t, dir, "pwn/ok", fmt.Sprintf(validChall, "ok", "pwn"))
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+
+	assert.Len(t, idx.GetAll(), 2)
+	_, err = idx.Get("web", "ok")
+	assert.NoError(t, err)
+	_, err = idx.Get("pwn", "ok")
+	assert.NoError(t, err)
+
+	skipped := idx.Skipped()
+	require.Len(t, skipped, 1)
+	assert.Equal(t, filepath.Join(dir, "web/broken/challenge.yml"), skipped[0].Path)
+	assert.NotEmpty(t, skipped[0].Reason)
+}
+
+func TestBuildIndex_SkipsDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	writeChallenge(t, dir, "a", fmt.Sprintf(validChall, "login", "web"))
+	writeChallenge(t, dir, "b", fmt.Sprintf(validChall, "login", "web"))
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+
+	// WalkDir is lexical: a is indexed, b is the duplicate
+	assert.Len(t, idx.GetAll(), 1)
+	skipped := idx.Skipped()
+	require.Len(t, skipped, 1)
+	assert.Equal(t, filepath.Join(dir, "b/challenge.yml"), skipped[0].Path)
+	assert.Contains(t, skipped[0].Reason, filepath.Join(dir, "a/challenge.yml"))
+	assert.Contains(t, skipped[0].Reason, "web/login")
+}
+
+func TestBuildIndex_SameNameDifferentCategories(t *testing.T) {
+	dir := t.TempDir()
+	writeChallenge(t, dir, "web", fmt.Sprintf(validChall, "login", "web"))
+	writeChallenge(t, dir, "pwn", fmt.Sprintf(validChall, "login", "pwn"))
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+	assert.Len(t, idx.GetAll(), 2)
+	assert.Empty(t, idx.Skipped())
+}
+
+func TestBuildIndex_UnreadableSubdirSkipped(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	writeChallenge(t, dir, "web", fmt.Sprintf(validChall, "ok", "web"))
+	locked := filepath.Join(dir, "locked")
+	require.NoError(t, os.MkdirAll(locked, 0o755))
+	require.NoError(t, os.Chmod(locked, 0))
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+	assert.Len(t, idx.GetAll(), 1)
+	require.Len(t, idx.Skipped(), 1)
+	assert.Equal(t, locked, idx.Skipped()[0].Path)
+}
+
+func TestBuildIndex_FailedRebuildKeepsIndex(t *testing.T) {
+	dir := t.TempDir()
+	writeChallenge(t, dir, "web", fmt.Sprintf(validChall, "ok", "web"))
+	writeChallenge(t, dir, "broken", "name: [unterminated\n")
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+	require.Len(t, idx.GetAll(), 1)
+
+	assert.Error(t, idx.BuildIndex("/nonexistent/path/that/does/not/exist"))
+	assert.Len(t, idx.GetAll(), 1, "the previous index is kept")
+	assert.Len(t, idx.Skipped(), 1, "and so is its skipped list")
+}
+
+func TestBuildIndex_RebuildClearsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	writeChallenge(t, dir, "web", fmt.Sprintf(validChall, "ok", "web"))
+	writeChallenge(t, dir, "broken", "name: [unterminated\n")
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+	require.Len(t, idx.Skipped(), 1)
+
+	writeChallenge(t, dir, "broken", fmt.Sprintf(validChall, "fixed", "web"))
+	require.NoError(t, idx.BuildIndex(dir))
+	assert.Len(t, idx.GetAll(), 2)
+	assert.Empty(t, idx.Skipped())
 }
 
 func TestGet_ExistingChallenge(t *testing.T) {
@@ -373,9 +476,12 @@ deploy_parameters:
   compose_file: nope.yaml
 `)
 
-	_, err := NewChallengeIndex(dir)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "compose_file")
+	// The challenge is skipped, with the reason, instead of failing the index
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+	assert.Empty(t, idx.GetAll())
+	require.Len(t, idx.Skipped(), 1)
+	assert.Contains(t, idx.Skipped()[0].Reason, "compose_file")
 }
 
 func TestLoadComposeDefinition_NoServicesSectionErrors(t *testing.T) {
@@ -390,9 +496,12 @@ deploy_parameters:
 `)
 	writeFile(t, dir, "web", "docker-compose.yml", "version: \"3\"\nnetworks:\n  default: {}\n")
 
-	_, err := NewChallengeIndex(dir)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "services")
+	// The challenge is skipped, with the reason, instead of failing the index
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+	assert.Empty(t, idx.GetAll())
+	require.Len(t, idx.Skipped(), 1)
+	assert.Contains(t, idx.Skipped()[0].Reason, "services")
 }
 
 func TestLoadComposeDefinition_NoComposeFileLeavesHTTPUntouched(t *testing.T) {
