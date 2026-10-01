@@ -2,6 +2,8 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+## v0.7.2 (2026-10-01)
+
 ### Changed
 - Docker Compose project names, which also name the subdomains of instances, now include the category and a hash of the instance's identity (e.g. `polypwn-web-login-team1-<hash>`). Instances already running when upgrading keep their previous name: terminating them also removes the project under that name, so no containers are left behind
 - `/admin/reload-challs` returns `{"indexed": <count>, "skipped": [{"path", "reason"}]}` instead of an empty body
