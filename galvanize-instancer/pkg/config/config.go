@@ -55,7 +55,7 @@ type InstancerConfig struct {
 	RandomizePublishedPorts   bool                   `mapstructure:"randomize_published_ports,omitempty"`  // Randomize host ports for non-fixed TCP published_ports
 	RandomizedPortMin         int                    `mapstructure:"randomized_port_min,omitempty"`        // Lower bound for randomized host ports, included (default: 20000)
 	RandomizedPortMax         int                    `mapstructure:"randomized_port_max,omitempty"`        // Upper bound for randomized host ports, included (default: 60999)
-	MaxConcurrentAnsible      int                    `mapstructure:"max_concurrent_ansible,omitempty"`      // Maximum concurrent Ansible executions (default: 5) - deprecated, use NumWorkers
+	MaxConcurrentAnsible      int                    `mapstructure:"max_concurrent_ansible,omitempty"`      // Without Redis: maximum concurrent Ansible runs for team requests and expiries (default: 5); admin actions are not limited
 	Redis                     RedisConfig            `mapstructure:"redis"`                                 // Redis configuration for job queue
 	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                  // Number of Ansible workers (default: 10)
 	Metrics                   MetricsConfig          `mapstructure:"metrics"`                                // Metrics endpoint configuration
@@ -96,6 +96,18 @@ func MergeResourceLimits(defaults, overrides ResourceLimits) ResourceLimits {
 		result.PidsLimit = overrides.PidsLimit
 	}
 	return result
+}
+
+// DefaultMaxConcurrentAnsible is the default of max_concurrent_ansible
+const DefaultMaxConcurrentAnsible = 5
+
+// MaxConcurrentAnsibleLimit returns max_concurrent_ansible, or its default
+// when unset or not positive.
+func (ic InstancerConfig) MaxConcurrentAnsibleLimit() int {
+	if ic.MaxConcurrentAnsible > 0 {
+		return ic.MaxConcurrentAnsible
+	}
+	return DefaultMaxConcurrentAnsible
 }
 
 // Default range of randomized host ports, bounds included

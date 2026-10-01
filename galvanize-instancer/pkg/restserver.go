@@ -26,14 +26,15 @@ import (
 
 // Server implements api.ServerInterface
 type Server struct {
-	db          *gorm.DB
-	challIdx    challenge.ChallengeIndexer
-	confProv    config.Provider
-	deployer    ansible.Deployer
-	expirySched *scheduler.ExpiryScheduler
-	kmu         keymutex.KeyMutex
-	wg          sync.WaitGroup
-	jobQueue    *worker.Queue // Redis job queue (optional, nil means use direct goroutines)
+	db           *gorm.DB
+	challIdx     challenge.ChallengeIndexer
+	confProv     config.Provider
+	deployer     ansible.Deployer
+	teamDeployer ansible.Deployer // team requests run without the job queue
+	expirySched  *scheduler.ExpiryScheduler
+	kmu          keymutex.KeyMutex
+	wg           sync.WaitGroup
+	jobQueue     *worker.Queue // Redis job queue (optional, nil means use direct goroutines)
 }
 
 // ServerOpts holds the dependencies needed to construct a Server.
@@ -42,9 +43,13 @@ type ServerOpts struct {
 	ChallengeIndexer challenge.ChallengeIndexer
 	ConfigProvider   config.Provider
 	Deployer         ansible.Deployer
-	ExpiryScheduler  *scheduler.ExpiryScheduler
-	KeyMutex         keymutex.KeyMutex
-	JobQueue         *worker.Queue // Optional: if provided, jobs are queued to Redis
+	// TeamDeployer runs team deploys and terminations started without the
+	// job queue (Redis not configured), e.g. an ansible.LimitedDeployer.
+	// Optional: defaults to Deployer. Admin actions always use Deployer.
+	TeamDeployer    ansible.Deployer
+	ExpiryScheduler *scheduler.ExpiryScheduler
+	KeyMutex        keymutex.KeyMutex
+	JobQueue        *worker.Queue // Optional: if provided, jobs are queued to Redis
 }
 
 var _ api.ServerInterface = (*Server)(nil)
@@ -61,14 +66,19 @@ func NewServerWithOpts(opts ServerOpts) *Server {
 	if deployer == nil {
 		deployer = &ansible.AnsibleDeployer{}
 	}
+	teamDeployer := opts.TeamDeployer
+	if teamDeployer == nil {
+		teamDeployer = deployer
+	}
 	return &Server{
-		db:          opts.DB,
-		challIdx:    opts.ChallengeIndexer,
-		confProv:    opts.ConfigProvider,
-		deployer:    deployer,
-		expirySched: opts.ExpiryScheduler,
-		kmu:         kmu,
-		jobQueue:    opts.JobQueue,
+		db:           opts.DB,
+		challIdx:     opts.ChallengeIndexer,
+		confProv:     opts.ConfigProvider,
+		deployer:     deployer,
+		teamDeployer: teamDeployer,
+		expirySched:  opts.ExpiryScheduler,
+		kmu:          kmu,
+		jobQueue:     opts.JobQueue,
 	}
 }
 
@@ -205,7 +215,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		defer s.wg.Done()
 
 		start := time.Now()
-		connInfo, deployErr := s.deployer.Deploy(context.Background(), conf, chall, claims.TeamID)
+		connInfo, deployErr := s.teamDeployer.Deploy(context.Background(), conf, chall, claims.TeamID)
 		duration := time.Since(start)
 
 		result := "success"
@@ -410,7 +420,7 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 			teamID = *deployment.TeamID
 		}
 		start := time.Now()
-		terminateErr := models.TerminateDeployment(s.db, s.challIdx, s.deployer, conf, deployment)
+		terminateErr := models.TerminateDeployment(s.db, s.challIdx, s.teamDeployer, conf, deployment)
 		duration := time.Since(start)
 		result := "success"
 		if terminateErr != nil {

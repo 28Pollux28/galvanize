@@ -146,6 +146,8 @@ var serveCmd = &cobra.Command{
 		// 6. Initialize Redis job queue and worker pool (if configured)
 		var jobQueue *worker.Queue
 		var workerPool *worker.Pool
+		// Runs team requests and expiries without Redis; nil: the default deployer
+		var teamDeployer ansible.Deployer
 
 		if cfg.Instancer.Redis.Addr != "" {
 			var queueErr error
@@ -177,14 +179,18 @@ var serveCmd = &cobra.Command{
 			})
 			zap.S().Infof("Redis job queue enabled with %d workers", numWorkers)
 		} else {
-			zap.S().Info("Redis not configured, using direct goroutines for deployments")
+			// Team requests and expiries share max_concurrent_ansible slots;
+			// admin actions are not limited
+			limit := cfg.Instancer.MaxConcurrentAnsibleLimit()
+			teamDeployer = ansible.NewLimitedDeployer(&ansible.AnsibleDeployer{}, limit)
+			zap.S().Infof("Redis not configured, using direct goroutines for deployments (at most %d Ansible runs at a time for team requests and expiries)", limit)
 		}
 
 		// Initialize scheduler with job queue (can be nil if Redis not configured)
 		expirySched := scheduler.NewExpiryScheduler(db, jobQueue, zap.S().Named("ExpiryScheduler"))
 		if jobQueue == nil {
 			// Without Redis, expired deployments are terminated in place
-			expirySched.WithDirectTermination(challIdx, confProv, &ansible.AnsibleDeployer{})
+			expirySched.WithDirectTermination(challIdx, confProv, teamDeployer)
 		}
 
 		// 7. Server Init via DI
@@ -193,6 +199,7 @@ var serveCmd = &cobra.Command{
 			ChallengeIndexer: challIdx,
 			ConfigProvider:   confProv,
 			Deployer:         &ansible.AnsibleDeployer{},
+			TeamDeployer:     teamDeployer,
 			ExpiryScheduler:  expirySched,
 			JobQueue:         jobQueue,
 		})

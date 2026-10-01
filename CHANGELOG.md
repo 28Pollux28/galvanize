@@ -10,6 +10,7 @@
 - `/extend` refuses a deployment that is not running (starting, stopping or failed) with a 400 "deployment is not running", counted as `not_running` in the extension rejection metric: it extended any deployment and always answered with status `running`
 - The `tcp` playbook no longer requires `traefik_network`: it declared that network in the compose definition although TCP services run on the bridge network and never join it, so TCP challenges failed to deploy when it was not set
 - The Docker image's default command now starts the server (`serve --port 8080 --config data/config.yaml`): it passed the port as an argument, which `serve` rejects (`unknown command "8080"`), so the image only worked with an explicit command
+- `max_concurrent_ansible` is now honored: without Redis, at most that many Ansible runs (default 5) run at once for team deploys, team terminations and expiries, the others waiting for a slot. Admin actions are not limited. The setting was read but never used, so these runs were unbounded
 
 ## v0.7.2 (2026-10-01)
 

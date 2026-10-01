@@ -883,3 +883,30 @@ func TestExtendInstance_NotRunning(t *testing.T) {
 		})
 	}
 }
+
+// Without the job queue, team requests use TeamDeployer and admin actions
+// the unlimited Deployer
+func TestTeamDeployer_UsedForTeamRequestsOnly(t *testing.T) {
+	admin, team := &mockDeployer{}, &mockDeployer{}
+	srv := newTestServerWithMock(t, admin, newMockIndexer(httpChallenge(), uniqueChallenge()))
+	srv.teamDeployer = team
+
+	claims := &auth.Claims{TeamID: "team1", ChallengeName: "http", Category: "web", Role: "user"}
+	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/deploy", claims, `{"challenge_name":"http","category":"web"}`)
+	require.NoError(t, srv.DeployInstance(ctx))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	ctx, rec = echoCtxWithClaimsAndBody(http.MethodPost, "/admin/deploy-all", &auth.Claims{Role: "admin"}, "")
+	require.NoError(t, srv.DeployAllAdminInstances(ctx))
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	waitForBackground(t, srv)
+
+	assert.Len(t, team.deployCalls, 1, "the team deploy")
+	assert.Len(t, admin.deployCalls, 1, "the admin deploy-all")
+}
+
+func TestNewServerWithOpts_TeamDeployerDefaultsToDeployer(t *testing.T) {
+	d := &mockDeployer{}
+	srv := NewServerWithOpts(ServerOpts{Deployer: d})
+	assert.Same(t, d, srv.teamDeployer)
+}

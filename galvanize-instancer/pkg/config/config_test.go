@@ -54,3 +54,9 @@ func TestLoad_RejectsInvalidPortRange(t *testing.T) {
 	assert.Contains(t, err.Error(), "randomized port range 40000-30009")
 	assert.Equal(t, 30000, Get().Instancer.RandomizedPortMin, "the current config is kept")
 }
+
+func TestMaxConcurrentAnsibleLimit(t *testing.T) {
+	assert.Equal(t, 5, InstancerConfig{}.MaxConcurrentAnsibleLimit(), "default")
+	assert.Equal(t, 5, InstancerConfig{MaxConcurrentAnsible: -2}.MaxConcurrentAnsibleLimit())
+	assert.Equal(t, 2, InstancerConfig{MaxConcurrentAnsible: 2}.MaxConcurrentAnsibleLimit())
+}
