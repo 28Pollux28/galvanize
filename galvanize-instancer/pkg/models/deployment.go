@@ -27,6 +27,7 @@ var (
 	ErrAlreadyExpired            = errors.New("deployment already expired")
 	ErrNoExtensionsLeft          = errors.New("no time extensions left")
 	ErrNoExpiration              = errors.New("deployment has no expiration time")
+	ErrNotRunning                = errors.New("deployment is not running")
 )
 
 type Deployment struct {
@@ -196,6 +197,10 @@ func DeleteDeployment(db *gorm.DB, deployment *Deployment) error {
 }
 
 func ExtendDeploymentExpiration(db *gorm.DB, deployment *Deployment, extension, extensionWindow time.Duration, maxExtensions int) error {
+	// A deployment still starting, stopping or failed has nothing to extend
+	if deployment.Status != DeploymentStatusRunning {
+		return ErrNotRunning
+	}
 	if deployment.ExpiresAt == nil {
 		return ErrNoExpiration
 	}

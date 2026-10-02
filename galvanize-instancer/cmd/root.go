@@ -52,10 +52,7 @@ func initConfig() {
 	viper.SetConfigFile(cfgFile)
 	viper.SetConfigType("yaml")
 
-	viper.SetDefault("instancer.deployment_ttl", "1h")
-	viper.SetDefault("instancer.deployment_ttl_extension", "30m")
-	viper.SetDefault("instancer.deployment_max_extensions", 4)
-	viper.SetDefault("instancer.deployment_extension_window", "30m")
+	setConfigDefaults()
 
 	if err := viper.ReadInConfig(); err != nil {
 		zap.S().Fatalf("Error reading config file: %v", err)
@@ -69,6 +66,14 @@ func initConfig() {
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		handleConfigChange(e.Name)
 	})
+}
+
+// setConfigDefaults sets the defaults of the settings a config may omit.
+func setConfigDefaults() {
+	viper.SetDefault("instancer.deployment_ttl", "1h")
+	viper.SetDefault("instancer.deployment_ttl_extension", "30m")
+	viper.SetDefault("instancer.deployment_max_extensions", 3)
+	viper.SetDefault("instancer.deployment_extension_window", "30m")
 }
 
 func handleConfigChange(filename string) {

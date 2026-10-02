@@ -2,6 +2,17 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Fixed
+- The default of `deployment_max_extensions` is now 3, as documented in `config.example.yaml`: the code defaulted to 4
+- Without Redis, expired deployments are now terminated: the expiry scheduler had no way to run a termination without the job queue, so it only marked them as errors ("no job queue configured for termination") and left their containers running
+- A panic in a request handler now returns a 500 response and is logged with its stack trace: the recovery middleware was commented out, so the connection was dropped without a response
+- `/admin/deploy-all` now lists the category and name of each challenge it deploys: its `challenges` entries were empty (`{"category": "", "challenge_name": ""}`). `/admin/deploy-all` and `/admin/terminate-all` return `"challenges": []` instead of `null` when there is nothing to do
+- `/extend` refuses a deployment that is not running (starting, stopping or failed) with a 400 "deployment is not running", counted as `not_running` in the extension rejection metric: it extended any deployment and always answered with status `running`
+- The `tcp` playbook no longer requires `traefik_network`: it declared that network in the compose definition although TCP services run on the bridge network and never join it, so TCP challenges failed to deploy when it was not set
+- The Docker image's default command now starts the server (`serve --port 8080 --config data/config.yaml`): it passed the port as an argument, which `serve` rejects (`unknown command "8080"`), so the image only worked with an explicit command
+- `max_concurrent_ansible` is now honored: without Redis, at most that many Ansible runs (default 5) run at once for team deploys, team terminations and expiries, the others waiting for a slot. Admin actions are not limited. The setting was read but never used, so these runs were unbounded
+- The published port bindings store no longer leaks a SQLite connection, and its file descriptor, on every deploy and terminate: it opened a new connection pool for each call and never closed it. It now keeps one per database file
+
 ## v0.7.2 (2026-10-01)
 
 ### Changed

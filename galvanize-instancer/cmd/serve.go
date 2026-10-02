@@ -54,23 +54,7 @@ var serveCmd = &cobra.Command{
 		e.HidePort = true
 
 		// 2. Middleware
-		skipper := func(c echo.Context) bool {
-			// Skip health check endpoint
-			return c.Request().URL.Path == "/health"
-		}
-		e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-			LogStatus:   true,
-			LogMethod:   true,
-			LogRemoteIP: true,
-			LogURI:      true,
-			Skipper:     skipper,
-			LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-				zap.S().Infof("| %v | %v | %v | %v", v.RemoteIP, v.Method, v.URI, v.Status)
-				return nil
-			},
-		}))
-		//e.Use(middleware.Recover())
-		e.Use(middleware.CORS())
+		useMiddleware(e)
 
 		// 3. Prometheus
 		e.Use(echoprometheus.NewMiddleware("instancer")) // register middleware to gather metrics from requests
@@ -192,12 +176,11 @@ var serveCmd = &cobra.Command{
 				Logger:     zap.S().Named("WorkerPool"),
 			})
 			zap.S().Infof("Redis job queue enabled with %d workers", numWorkers)
-		} else {
-			zap.S().Info("Redis not configured, using direct goroutines for deployments")
 		}
 
 		// Initialize scheduler with job queue (can be nil if Redis not configured)
 		expirySched := scheduler.NewExpiryScheduler(db, jobQueue, zap.S().Named("ExpiryScheduler"))
+		teamDeployer := configureQueueless(cfg, jobQueue, expirySched, challIdx, confProv)
 
 		// 7. Server Init via DI
 		srv := server.NewServerWithOpts(server.ServerOpts{
@@ -205,6 +188,7 @@ var serveCmd = &cobra.Command{
 			ChallengeIndexer: challIdx,
 			ConfigProvider:   confProv,
 			Deployer:         &ansible.AnsibleDeployer{},
+			TeamDeployer:     teamDeployer,
 			ExpiryScheduler:  expirySched,
 			JobQueue:         jobQueue,
 		})
@@ -278,6 +262,52 @@ func metricsHandler(username, password string, h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// configureQueueless sets up running without a job queue (Redis not
+// configured): team requests and expiries then share a LimitedDeployer with
+// max_concurrent_ansible slots, which it returns, and the scheduler
+// terminates expired deployments itself with it. Admin actions keep the
+// unlimited deployer. With a job queue, it does nothing and returns nil.
+func configureQueueless(cfg *config.Config, jobQueue *worker.Queue, expirySched *scheduler.ExpiryScheduler, challIdx challenge.ChallengeIndexer, confProv config.Provider) ansible.Deployer {
+	if jobQueue != nil {
+		return nil
+	}
+	limit := cfg.Instancer.MaxConcurrentAnsibleLimit()
+	teamDeployer := ansible.NewLimitedDeployer(&ansible.AnsibleDeployer{}, limit)
+	expirySched.WithDirectTermination(challIdx, confProv, teamDeployer)
+	zap.S().Infof("Redis not configured, using direct goroutines for deployments (at most %d Ansible runs at a time for team requests and expiries)", limit)
+	return teamDeployer
+}
+
+// useMiddleware installs the request logger, panic recovery and CORS.
+//
+// Recover turns a panic in a handler into a 500 response, logged with its
+// stack trace and by the request logger, instead of net/http's default of
+// dropping the connection without a response.
+func useMiddleware(e *echo.Echo) {
+	skipper := func(c echo.Context) bool {
+		// Skip health check endpoint
+		return c.Request().URL.Path == "/health"
+	}
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogStatus:   true,
+		LogMethod:   true,
+		LogRemoteIP: true,
+		LogURI:      true,
+		Skipper:     skipper,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			zap.S().Infof("| %v | %v | %v | %v", v.RemoteIP, v.Method, v.URI, v.Status)
+			return nil
+		},
+	}))
+	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{
+		LogErrorFunc: func(c echo.Context, err error, stack []byte) error {
+			zap.S().Errorf("Panic serving %s %s: %v\n%s", c.Request().Method, c.Request().URL.Path, err, stack)
+			return err
+		},
+	}))
+	e.Use(middleware.CORS())
 }
 
 func validatePort(port string) bool {

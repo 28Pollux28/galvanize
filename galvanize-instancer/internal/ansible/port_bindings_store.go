@@ -11,7 +11,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// portBindingDBMu serializes the port bindings store and guards
+// portBindingDBs.
 var portBindingDBMu sync.Mutex
+
+// portBindingDBs holds one connection pool per database file, opened on
+// first use and kept for the process lifetime.
+var portBindingDBs = map[string]*gorm.DB{}
 
 type portBindingRecord struct {
 	DeploymentKey string    `gorm:"column:deployment_key;primaryKey"`
@@ -228,13 +234,24 @@ func CleanupStalePortBindings(dbPath string) {
 	}
 }
 
+// openPortBindingDB returns the connection pool of the store at dbPath,
+// opening it and creating its table on first use. Callers hold
+// portBindingDBMu. Opening a pool on every call, as before, leaked one
+// SQLite connection and its file descriptor per call, since none was closed.
 func openPortBindingDB(dbPath string) (*gorm.DB, error) {
+	if db, ok := portBindingDBs[dbPath]; ok {
+		return db, nil
+	}
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
 	if err := db.AutoMigrate(&portBindingRecord{}); err != nil {
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
 		return nil, err
 	}
+	portBindingDBs[dbPath] = db
 	return db, nil
 }

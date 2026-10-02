@@ -14,7 +14,7 @@ instancer:
   randomized_port_min: 20000 # Lower bound for randomized host ports, included (default: 20000)
   randomized_port_max: 60999 # Upper bound for randomized host ports, included (default: 60999)
   num_workers: 10 # Number of Ansible workers for processing jobs (default: 10)
-  max_concurrent_ansible: 5 # Fallback: max concurrent Ansible when Redis not configured (default: 5)
+  max_concurrent_ansible: 5 # Without Redis: max concurrent Ansible runs for team requests and expiries, read at startup; admin actions are not limited (default: 5)
   metrics:
     username: "prometheus" # Basic-auth username for the /metrics endpoint (default: "prometheus")
     password: ""           # Basic-auth password; leave empty to disable authentication

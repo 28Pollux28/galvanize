@@ -257,3 +257,49 @@ deploy_parameters:
 	assert.Equal(t, "bof", chall2.Name)
 	assert.Equal(t, "pwn", chall2.Category)
 }
+
+// ---------------------------------------------------------------------------
+// DeployAllAdminInstances / TerminateAllAdminInstances
+// ---------------------------------------------------------------------------
+
+func otherUniqueChallenge() *challenge.Challenge {
+	c := uniqueChallenge()
+	c.Name, c.Category = "board", "misc"
+	return c
+}
+
+func TestDeployAllAdminInstances_ListsDeployedChallenges(t *testing.T) {
+	deployer := &mockDeployer{}
+	srv := newTestServerWithMock(t, deployer, newMockIndexer(uniqueChallenge(), otherUniqueChallenge(), httpChallenge()))
+	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/admin/deploy-all", &auth.Claims{Role: "admin"}, "")
+
+	require.NoError(t, srv.DeployAllAdminInstances(ctx))
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	waitForBackground(t, srv)
+
+	var resp api.BulkOperationResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, 2, resp.ChallengesCount)
+	assert.ElementsMatch(t, []api.ChallengeCategoryResponse{
+		{Category: "web", ChallengeName: "shared"},
+		{Category: "misc", ChallengeName: "board"},
+	}, resp.Challenges, "each deployed unique challenge, not empty entries")
+	assert.Len(t, deployer.deployCalls, 2)
+
+	// Already deployed: nothing to do, and the list is empty, not null
+	ctx, rec = echoCtxWithClaimsAndBody(http.MethodPost, "/admin/deploy-all", &auth.Claims{Role: "admin"}, "")
+	require.NoError(t, srv.DeployAllAdminInstances(ctx))
+	assert.JSONEq(t, `{"message":"Deploying 0 unique challenges","challenges_count":0,"challenges":[]}`, rec.Body.String())
+}
+
+func TestBulkAdminInstances_EmptyListNotNull(t *testing.T) {
+	srv := newTestServerWithMock(t, &mockDeployer{}, newMockIndexer(httpChallenge()))
+
+	ctx, rec := echoCtxWithClaimsAndBody(http.MethodPost, "/admin/deploy-all", &auth.Claims{Role: "admin"}, "")
+	require.NoError(t, srv.DeployAllAdminInstances(ctx))
+	assert.JSONEq(t, `{"message":"No unique challenges found","challenges_count":0,"challenges":[]}`, rec.Body.String())
+
+	ctx, rec = echoCtxWithClaimsAndBody(http.MethodPost, "/admin/terminate-all", &auth.Claims{Role: "admin"}, "")
+	require.NoError(t, srv.TerminateAllAdminInstances(ctx))
+	assert.JSONEq(t, `{"message":"No unique deployments found","challenges_count":0,"challenges":[]}`, rec.Body.String())
+}
