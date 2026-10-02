@@ -56,9 +56,9 @@ var serveCmd = &cobra.Command{
 		// 2. Middleware
 		useMiddleware(e)
 
-		// 3. Prometheus
+		// 3. Prometheus: request metrics are gathered here and served by the
+		// metrics server on :5001 only, never on the API port
 		e.Use(echoprometheus.NewMiddleware("instancer")) // register middleware to gather metrics from requests
-		e.GET("/metrics", echoprometheus.NewHandler())
 
 		// JWT secret from env (for security);
 		jwtSecret := os.Getenv("JWT_SECRET")
@@ -273,7 +273,7 @@ func configureQueueless(cfg *config.Config, jobQueue *worker.Queue, expirySched 
 }
 
 // jwtMiddleware requires a valid HS256 token signed with secret on every
-// route but /health and /metrics; handlers then check the claims' role.
+// route but /health; handlers then check the claims' role.
 func jwtMiddleware(secret string) echo.MiddlewareFunc {
 	return echojwt.WithConfig(echojwt.Config{
 		NewClaimsFunc: func(c echo.Context) jwt.Claims {
@@ -281,7 +281,7 @@ func jwtMiddleware(secret string) echo.MiddlewareFunc {
 		},
 		SigningKey: []byte(secret),
 		Skipper: func(c echo.Context) bool {
-			return c.Path() == "/health" || c.Path() == "/metrics"
+			return c.Path() == "/health"
 		},
 	})
 }
