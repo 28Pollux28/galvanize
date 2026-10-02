@@ -161,3 +161,97 @@ func isRandomBindingFor(portDef string, target string) bool {
 	}
 	return defaultPortRange.contains(hostPort)
 }
+
+func webContainer(service, project, domain string) ContainerInfo {
+	return ContainerInfo{
+		Name: project + "-" + service + "-1",
+		Labels: map[string]string{
+			"com.docker.compose.service":                                     service,
+			"traefik.enable":                                                 "true",
+			"traefik.http.routers." + project + ".rule":                      "Host(`" + domain + "`)",
+			"traefik.http.services." + project + ".loadbalancer.server.port": "80",
+		},
+	}
+}
+
+func sshContainer(project string, port int) ContainerInfo {
+	return ContainerInfo{
+		Name:   project + "-ssh-1",
+		Labels: map[string]string{"com.docker.compose.service": "ssh"},
+		Publishers: []PublisherInfo{
+			{Protocol: "tcp", PublishedPort: port, TargetPort: 22, URL: "0.0.0.0"},
+			{Protocol: "tcp", PublishedPort: port, TargetPort: 22, URL: "::"},
+		},
+	}
+}
+
+func TestGetConnectionInfo_SingleWebChallengeUnchanged(t *testing.T) {
+	conn, err := GetConnectionInfo([]ContainerInfo{webContainer("web", "p", "p.challs.example.com")}, "challs.example.com", nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://p.challs.example.com/", conn)
+}
+
+// A web front end and an SSH service with show_tcp_ports: both endpoints,
+// whatever order Ansible reports the containers in.
+func TestGetConnectionInfo_WebAndSSHServices(t *testing.T) {
+	web := webContainer("web", "p", "p.challs.example.com")
+	ssh := sshContainer("p", 40022)
+	want := "https://p.challs.example.com/\ntcp://challs.example.com:40022"
+	hints := map[int]string{}
+
+	for _, order := range [][]ContainerInfo{{web, ssh}, {ssh, web}} {
+		conn, err := GetConnectionInfo(order, "challs.example.com", hints, true)
+		require.NoError(t, err)
+		assert.Equal(t, want, conn)
+	}
+
+	hints[22] = "ssh"
+	conn, err := GetConnectionInfo([]ContainerInfo{web, ssh}, "challs.example.com", hints, true)
+	require.NoError(t, err)
+	assert.Equal(t, "https://p.challs.example.com/\nssh://challs.example.com:40022", conn)
+}
+
+func TestGetConnectionInfo_SeveralWebServices(t *testing.T) {
+	conn, err := GetConnectionInfo([]ContainerInfo{
+		webContainer("web", "web-p", "web-p.challs.example.com"),
+		webContainer("api", "api-p", "api-p.challs.example.com"),
+	}, "challs.example.com", nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://api-p.challs.example.com/\nhttps://web-p.challs.example.com/", conn)
+}
+
+// Router labels other than rules (an author's own entrypoints, tls,
+// middlewares) were picked at random among the router labels
+func TestGetConnectionInfo_OnlyRouterRules(t *testing.T) {
+	web := webContainer("web", "p", "p.challs.example.com")
+	web.Labels["traefik.http.routers.p.entrypoints"] = "websecure"
+	web.Labels["traefik.http.routers.p.tls"] = "true"
+	web.Labels["traefik.http.routers.p.middlewares"] = "auth"
+
+	for range 20 {
+		conn, err := GetConnectionInfo([]ContainerInfo{web}, "challs.example.com", nil, false)
+		require.NoError(t, err)
+		require.Equal(t, "https://p.challs.example.com/", conn)
+	}
+}
+
+func TestGetConnectionInfo_RuleWithSeveralHosts(t *testing.T) {
+	web := webContainer("web", "p", "")
+	web.Labels["traefik.http.routers.p.rule"] = "Host(`a.challs.example.com`) || (Host(`b.challs.example.com`) && PathPrefix(`/x`))"
+	conn, err := GetConnectionInfo([]ContainerInfo{web}, "challs.example.com", nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://a.challs.example.com/\nhttps://b.challs.example.com/", conn)
+}
+
+func TestGetConnectionInfo_TraefikDisabledIgnored(t *testing.T) {
+	web := webContainer("web", "p", "p.challs.example.com")
+	web.Labels["traefik.enable"] = "false"
+	conn, err := GetConnectionInfo([]ContainerInfo{web, sshContainer("p", 40022)}, "challs.example.com", map[int]string{22: "ssh"}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "ssh://challs.example.com:40022", conn)
+}
+
+func TestGetConnectionInfo_NoEndpoint(t *testing.T) {
+	_, err := GetConnectionInfo([]ContainerInfo{{Name: "db", Labels: map[string]string{"com.docker.compose.service": "db"}}}, "challs.example.com", nil, false)
+	assert.Error(t, err)
+}
