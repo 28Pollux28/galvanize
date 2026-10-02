@@ -83,16 +83,7 @@ var serveCmd = &cobra.Command{
 		cfg.Instancer.AnsibleDir = ansiblePath
 
 		// 4. Auth
-		jwtConfig := echojwt.Config{
-			NewClaimsFunc: func(c echo.Context) jwt.Claims {
-				return new(auth.Claims)
-			},
-			SigningKey: []byte(jwtSecret),
-			Skipper: func(c echo.Context) bool {
-				return c.Path() == "/health" || c.Path() == "/metrics"
-			},
-		}
-		e.Use(echojwt.WithConfig(jwtConfig))
+		e.Use(jwtMiddleware(jwtSecret))
 
 		if err := utils.RegisterSSHHosts(cfg); err != nil {
 			zap.S().Fatalf("Failed to register SSH hosts: %v", err)
@@ -191,6 +182,7 @@ var serveCmd = &cobra.Command{
 			TeamDeployer:     teamDeployer,
 			ExpiryScheduler:  expirySched,
 			JobQueue:         jobQueue,
+			Version:          rootCmd.Version,
 		})
 		api.RegisterHandlers(e, srv)
 
@@ -278,6 +270,20 @@ func configureQueueless(cfg *config.Config, jobQueue *worker.Queue, expirySched 
 	expirySched.WithDirectTermination(challIdx, confProv, teamDeployer)
 	zap.S().Infof("Redis not configured, using direct goroutines for deployments (at most %d Ansible runs at a time for team requests and expiries)", limit)
 	return teamDeployer
+}
+
+// jwtMiddleware requires a valid HS256 token signed with secret on every
+// route but /health and /metrics; handlers then check the claims' role.
+func jwtMiddleware(secret string) echo.MiddlewareFunc {
+	return echojwt.WithConfig(echojwt.Config{
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			return new(auth.Claims)
+		},
+		SigningKey: []byte(secret),
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/health" || c.Path() == "/metrics"
+		},
+	})
 }
 
 // useMiddleware installs the request logger, panic recovery and CORS.

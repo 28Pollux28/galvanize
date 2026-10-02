@@ -2,6 +2,9 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Added
+- `GET /admin/version` returns the running version (e.g. `{"version": "0.7.5"}`), for Zync to check compatibility. It requires an admin token: requests without a valid token get 401 and player tokens 403, so the version is never disclosed to players or unauthenticated clients
+
 ### Fixed
 - Connection info lists every HTTP endpoint of an instance, one per line, ordered by compose service: each host of each Traefik router rule as `https://<host>/`. Only the first container with a route was reported, so a challenge with several web services showed only one of them, depending on the order Ansible listed the containers. Without any route, the published ports of every container are listed, sorted by container port, instead of only the first container's; with `show_tcp_ports`, they follow the HTTP endpoints as before. Only routers' `.rule` labels are read, so other Traefik labels set by challenge authors (entrypoints, tls, middlewares) no longer make the route random, and containers with `traefik.enable=false` are skipped
 

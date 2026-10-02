@@ -35,6 +35,7 @@ type Server struct {
 	kmu          keymutex.KeyMutex
 	wg           sync.WaitGroup
 	jobQueue     *worker.Queue // Redis job queue (optional, nil means use direct goroutines)
+	version      string        // reported to admins only
 }
 
 // ServerOpts holds the dependencies needed to construct a Server.
@@ -50,6 +51,8 @@ type ServerOpts struct {
 	ExpiryScheduler *scheduler.ExpiryScheduler
 	KeyMutex        keymutex.KeyMutex
 	JobQueue        *worker.Queue // Optional: if provided, jobs are queued to Redis
+	// Version of the running Galvanize, reported to admins only
+	Version string
 }
 
 var _ api.ServerInterface = (*Server)(nil)
@@ -79,6 +82,7 @@ func NewServerWithOpts(opts ServerOpts) *Server {
 		expirySched:  opts.ExpiryScheduler,
 		kmu:          kmu,
 		jobQueue:     opts.JobQueue,
+		version:      opts.Version,
 	}
 }
 
