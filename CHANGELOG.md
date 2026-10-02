@@ -2,6 +2,8 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+## v0.7.3 (2026-10-01)
+
 ### Fixed
 - The default of `deployment_max_extensions` is now 3, as documented in `config.example.yaml`: the code defaulted to 4
 - Without Redis, expired deployments are now terminated: the expiry scheduler had no way to run a termination without the job queue, so it only marked them as errors ("no job queue configured for termination") and left their containers running
