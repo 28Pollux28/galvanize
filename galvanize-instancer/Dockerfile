@@ -6,12 +6,10 @@ WORKDIR /app
 # Copy go mod files first for better caching
 COPY ./galvanize-instancer/go.mod ./galvanize-instancer/go.sum ./
 RUN go mod download
-COPY ./galvanize-instancer .
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o galvanize .
 
 # Copy source code
 COPY ./galvanize-instancer .
-RUN go build -o galvanize .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o galvanize .
 
 FROM debian:stable-slim
 LABEL authors="28Pollux28"
