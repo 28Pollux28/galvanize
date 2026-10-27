@@ -2,6 +2,8 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+## v0.7.4 (2026-10-27)
+
 ### Added
 - Multi-arch Docker images (linux/amd64, linux/arm64)
 
