@@ -1,4 +1,5 @@
-FROM golang:1.25 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25 AS builder
+ARG TARGETOS TARGETARCH
 
 WORKDIR /app
 
@@ -8,7 +9,7 @@ RUN go mod download
 
 # Copy source code
 COPY ./galvanize-instancer .
-RUN go build -o galvanize .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o galvanize .
 
 FROM debian:stable-slim
 LABEL authors="28Pollux28"
