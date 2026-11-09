@@ -1,0 +1,236 @@
+{
+  "uid": "worker-traffic",
+  "title": "Challenge container traffic",
+  "description": "Incoming and outgoing traffic for UnitedCTF challenge containers on the worker",
+  "tags": ["unitedctf", "worker", "traffic"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "schemaVersion": 38,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "label": "Datasource",
+        "pluginId": "prometheus",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "RX in (players → containers)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "expr": "sum(rate(docker_container_network_receive_bytes_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m])) or vector(0)",
+          "legendFormat": "RX",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "TX out (containers → players / internet)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "expr": "sum(rate(docker_container_network_transmit_bytes_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m])) or vector(0)",
+          "legendFormat": "TX",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "HTTP requests (Traefik)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] } },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "expr": "sum(rate(traefik_entrypoint_requests_total{job=\"worker-traefik\",entrypoint=~\"web|websecure\"}[5m])) or vector(0)",
+          "legendFormat": "HTTP",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Live challenge containers",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "expr": "count(count by (name) (docker_container_memory_usage_bytes{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"})) or vector(0)",
+          "legendFormat": "containers",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Traffic in / out (all challenge containers)",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "custom": { "fillOpacity": 15, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(docker_container_network_receive_bytes_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m]))",
+          "legendFormat": "RX in",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(docker_container_network_transmit_bytes_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m]))",
+          "legendFormat": "TX out",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "HTTP requests by entrypoint",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 15, "lineWidth": 2 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (entrypoint) (rate(traefik_entrypoint_requests_total{job=\"worker-traefik\",entrypoint=~\"web|websecure\"}[5m]))",
+          "legendFormat": "{{entrypoint}}",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "RX in by container",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 10 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "custom": { "fillOpacity": 10, "lineWidth": 1 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(docker_container_network_receive_bytes_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m]))",
+          "legendFormat": "{{name}}",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "TX out by container",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 10 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "custom": { "fillOpacity": 10, "lineWidth": 1 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(docker_container_network_transmit_bytes_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m]))",
+          "legendFormat": "{{name}}",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "CPU (challenge containers)",
+      "gridPos": { "x": 0, "y": 23, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "custom": { "fillOpacity": 10, "lineWidth": 1 }, "min": 0 },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(docker_container_cpu_usage_seconds_total{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"}[5m]))",
+          "legendFormat": "{{name}}",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Memory working set",
+      "gridPos": { "x": 12, "y": 23, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10, "lineWidth": 1 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (name) (docker_container_memory_usage_bytes{job=\"worker-cadvisor\",name=~\"unitedctf-.+\"})",
+          "legendFormat": "{{name}}",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

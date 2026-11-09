@@ -57,7 +57,7 @@ func BuildResourceOverrides(rl config.ResourceLimits) map[string]interface{} {
 }
 
 func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Challenge, teamID string, params map[string]interface{}) (execute.Executor, *bytes.Buffer) {
-	composeProject := docker.BuildComposeProject(challenge.Unique, challenge.Category, challenge.Name, teamID)
+	composeProject := docker.BuildComposeProject(conf.Instancer.ComposeProjectPrefix, challenge.Unique, challenge.Category, challenge.InstanceKey(), teamID)
 
 	// Ansible playbook options
 	playbookOpts := &playbook.AnsiblePlaybookOptions{

@@ -47,19 +47,20 @@ type InstancerConfig struct {
 	AnsibleDir                string                 `mapstructure:"ansible_dir"`                           // Directory where Ansible playbooks are located
 	ChallengeDir              string                 `mapstructure:"challenge_dir"`                         // Directory where challenge playbooks are stored
 	InstancerHost             string                 `mapstructure:"instancer_host"`                        // Hostname of the node where challenges will be deployed
+	ComposeProjectPrefix      string                 `mapstructure:"compose_project_prefix,omitempty"`      // Prefix for compose project / instance subdomains (default: "polypwn")
 	DBPath                    string                 `mapstructure:"db_path"`                               // Path to the database file
 	DeploymentTTL             time.Duration          `mapstructure:"deployment_ttl,omitempty"`              // Time-to-live for deployments
 	DeploymentTTLExtension    time.Duration          `mapstructure:"deployment_ttl_extension,omitempty"`    // Duration to extend deployment TTL
 	DeploymentMaxExtensions   int                    `mapstructure:"deployment_max_extensions,omitempty"`   // Maximum number of TTL extensions allowed
 	DeploymentExtensionWindow time.Duration          `mapstructure:"deployment_extension_window,omitempty"` // Time window before expiration when extension is allowed
-	RandomizePublishedPorts   bool                   `mapstructure:"randomize_published_ports,omitempty"`  // Randomize host ports for non-fixed TCP published_ports
-	RandomizedPortMin         int                    `mapstructure:"randomized_port_min,omitempty"`        // Lower bound for randomized host ports, included (default: 20000)
-	RandomizedPortMax         int                    `mapstructure:"randomized_port_max,omitempty"`        // Upper bound for randomized host ports, included (default: 60999)
+	RandomizePublishedPorts   bool                   `mapstructure:"randomize_published_ports,omitempty"`   // Randomize host ports for non-fixed TCP published_ports
+	RandomizedPortMin         int                    `mapstructure:"randomized_port_min,omitempty"`         // Lower bound for randomized host ports, included (default: 20000)
+	RandomizedPortMax         int                    `mapstructure:"randomized_port_max,omitempty"`         // Upper bound for randomized host ports, included (default: 60999)
 	MaxConcurrentAnsible      int                    `mapstructure:"max_concurrent_ansible,omitempty"`      // Without Redis: maximum concurrent Ansible runs for team requests and expiries (default: 5); admin actions are not limited
 	Redis                     RedisConfig            `mapstructure:"redis"`                                 // Redis configuration for job queue
-	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                  // Number of Ansible workers (default: 10)
-	Metrics                   MetricsConfig          `mapstructure:"metrics"`                                // Metrics endpoint configuration
-	DefaultResourceLimits     ResourceLimits         `mapstructure:"default_resource_limits"`                // Default container resource limits applied to all deployments
+	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                 // Number of Ansible workers (default: 10)
+	Metrics                   MetricsConfig          `mapstructure:"metrics"`                               // Metrics endpoint configuration
+	DefaultResourceLimits     ResourceLimits         `mapstructure:"default_resource_limits"`               // Default container resource limits applied to all deployments
 }
 
 type RedisConfig struct {
@@ -77,8 +78,8 @@ type AnsibleConfig struct {
 // ResourceLimits defines container resource constraints applied via Docker Compose.
 // All three map to deploy.resources.limits (cpus, memory, pids) in Docker Compose.
 type ResourceLimits struct {
-	CPUs      string `mapstructure:"cpus" yaml:"cpus,omitempty"`           // e.g. "0.5", "1", "2"
-	Memory    string `mapstructure:"memory" yaml:"memory,omitempty"`       // e.g. "256M", "512M", "1G"
+	CPUs      string `mapstructure:"cpus" yaml:"cpus,omitempty"`             // e.g. "0.5", "1", "2"
+	Memory    string `mapstructure:"memory" yaml:"memory,omitempty"`         // e.g. "256M", "512M", "1G"
 	PidsLimit int    `mapstructure:"pids_limit" yaml:"pids_limit,omitempty"` // e.g. 256, 512
 }
 

@@ -1,0 +1,239 @@
+{
+  "uid": "ai-usage",
+  "title": "AI / bot usage",
+  "description": "HTTP User-Agent + path from Traefik. TCP: inbound connect + first payload on published challenge ports.",
+  "tags": ["unitedctf", "ai", "accesslog"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "schemaVersion": 39,
+  "version": 4,
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "All HTTP (1h)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({job=\"worker-traefik-access\"} [1h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "AI / LLM User-Agents (1h)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({job=\"worker-traefik-access\"} |~ \"(?i)chatgpt|gptbot|oai-searchbot|claude|anthropic|openai.com/bot|perplexity|gemini|google-extended|bytespider|copilot|cursor/|browser-use|playwright|puppeteer|headlesschrome\" !~ \"(?i)ClaudeBot/|GPTBot/|OAI-SearchBot/\" !~ \"216\\\\.73\\\\.21[67]\\\\.\" [1h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Phishy / recon paths (1h)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({job=\"worker-traefik-access\"} |~ \"(?i)/\\\\.env|/\\\\.git|/wp-admin|/wp-login|/phpmyadmin|/flag|/actuator|/server-status|/cgi-bin\" [1h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "TCP events (1h)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({job=\"worker-tcp-access\"} [1h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "All challenge HTTP (method, host, path, User-Agent)",
+      "description": "Every Traefik request. If this panel is empty, logs are not arriving. Click a line for full JSON.",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 12 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"worker-traefik-access\"} | json | line_format \"{{.RequestMethod}} {{.RequestHost}}{{.RequestPath}} [{{.DownstreamStatus}}] {{.request_User_Agent}} ({{.ClientHost}})\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Likely AI / LLM User-Agents",
+      "description": "Raw-line match on ChatGPT, Claude, Gemini, Perplexity, Cursor, Playwright, Puppeteer, headless Chrome. Official crawlers excluded: ClaudeBot, GPTBot, OAI-SearchBot. ChatGPT-User / Claude-User (model fetch on behalf of a person) still show. CEO Exchange's intended solver is Playwright.",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"worker-traefik-access\"} |~ \"(?i)chatgpt|gptbot|oai-searchbot|claude|anthropic|openai.com/bot|perplexity|gemini|google-extended|bytespider|copilot|cursor/|browser-use|playwright|puppeteer|headlesschrome\" !~ \"(?i)ClaudeBot/|GPTBot/|OAI-SearchBot/\" !~ \"216\\\\.73\\\\.21[67]\\\\.\" | json | line_format \"{{.RequestMethod}} {{.RequestHost}}{{.RequestPath}} [{{.DownstreamStatus}}] {{.request_User_Agent}} ({{.ClientHost}})\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Phishy / recon paths",
+      "description": ".env, .git, wp-admin, flag, actuator, metadata. Internet scanners hit these too, not only AI.",
+      "gridPos": { "x": 0, "y": 26, "w": 24, "h": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"worker-traefik-access\"} |~ \"(?i)/\\\\.env|/\\\\.git|/wp-admin|/wp-login|/phpmyadmin|/flag|/actuator|/server-status|/cgi-bin\" | json | line_format \"{{.RequestMethod}} {{.RequestHost}}{{.RequestPath}} [{{.DownstreamStatus}}] {{.request_User_Agent}} ({{.ClientHost}})\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "TCP payloads that look like HTTP / AI / scripts",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"worker-tcp-access\"} |~ \"(?i)GET |POST |User-Agent|chatgpt|claude|openai|anthropic|playwright|puppeteer|curl/|python-requests|httpx\" | json | line_format \"{{.container}}:{{.DstPort}} {{.event}} {{.preview}} ({{.ClientHost}})\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "All TCP challenge traffic (connect + first payload)",
+      "description": "Inbound SYN and first 256 payload bytes to unitedctf-* published ports. Click a line for hex.",
+      "gridPos": { "x": 0, "y": 44, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "editorMode": "code",
+          "expr": "{job=\"worker-tcp-access\"} | json | line_format \"{{.container}}:{{.DstPort}} {{.event}} {{.preview}} ({{.ClientHost}})\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ]
+    }
+  ]
+}

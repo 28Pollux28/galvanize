@@ -35,7 +35,7 @@ type AnsibleDeployer struct{}
 var _ Deployer = (*AnsibleDeployer)(nil)
 
 func deploymentKey(chall *challenge.Challenge, teamID string) string {
-	return chall.Category + "/" + chall.Name + ":" + teamID
+	return chall.Category + "/" + chall.InstanceKey() + ":" + teamID
 }
 
 func (a *AnsibleDeployer) Deploy(ctx context.Context, conf *config.Config, chall *challenge.Challenge, teamID string) (string, error) {

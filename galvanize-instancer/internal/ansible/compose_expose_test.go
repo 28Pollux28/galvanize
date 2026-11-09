@@ -96,9 +96,10 @@ func TestApplyComposeExposures_HTTPWiresTraefik(t *testing.T) {
 	assert.True(t, ruleFound, "router rule label should be set")
 	assert.True(t, portFound, "loadbalancer port label should be set")
 
-	// Service joined the traefik network.
+	// Service stays on the implicit default network and also joins Traefik.
 	nets, ok := web["networks"].([]interface{})
 	require.True(t, ok)
+	assert.Contains(t, nets, "default")
 	assert.Contains(t, nets, "traefik")
 
 	// Top-level external network declared.

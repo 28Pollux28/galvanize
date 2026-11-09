@@ -71,9 +71,9 @@ func GetDeployment(db *gorm.DB, category, challengeName, teamID string, lock boo
 	if lock {
 		result = db.Clauses(clause.Locking{
 			Strength: "UPDATE",
-		}).Where("category = ? AND challenge_name = ? AND team_id = ?", category, challengeName, teamID).Limit(1).Find(&deployment)
+		}).Where("LOWER(category) = LOWER(?) AND challenge_name = ? AND team_id = ?", category, challengeName, teamID).Limit(1).Find(&deployment)
 	} else {
-		result = db.Where("category = ? AND challenge_name = ? AND team_id = ?", category, challengeName, teamID).Limit(1).Find(&deployment)
+		result = db.Where("LOWER(category) = LOWER(?) AND challenge_name = ? AND team_id = ?", category, challengeName, teamID).Limit(1).Find(&deployment)
 	}
 	if result.Error != nil {
 		return nil, result.Error
@@ -90,9 +90,9 @@ func GetUniqueDeployment(db *gorm.DB, category, challengeName string, lock bool)
 	if lock {
 		result = db.Clauses(clause.Locking{
 			Strength: "UPDATE",
-		}).Where("category = ? AND challenge_name = ? AND team_id is NULL", category, challengeName).Limit(1).Find(&deployment)
+		}).Where("LOWER(category) = LOWER(?) AND challenge_name = ? AND team_id is NULL", category, challengeName).Limit(1).Find(&deployment)
 	} else {
-		result = db.Where("Category = ? AND challenge_name = ? AND team_id is NULL", category, challengeName).Limit(1).Find(&deployment)
+		result = db.Where("LOWER(category) = LOWER(?) AND challenge_name = ? AND team_id is NULL", category, challengeName).Limit(1).Find(&deployment)
 	}
 	if result.Error != nil {
 		return nil, result.Error

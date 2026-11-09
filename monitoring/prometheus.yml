@@ -11,3 +11,24 @@ scrape_configs:
     # basic_auth:
     #   username: prometheus
     #   password: <your-metrics-password>
+
+  # Worker challenge traffic. Ports are UFW-restricted to the control plane.
+  - job_name: worker-cadvisor
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - <worker-ip>:8088
+        labels:
+          role: worker
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: docker_container_.+
+        action: keep
+
+  - job_name: worker-traefik
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - <worker-ip>:8082
+        labels:
+          role: worker

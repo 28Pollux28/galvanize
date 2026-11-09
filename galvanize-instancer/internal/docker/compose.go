@@ -42,21 +42,37 @@ const projectSuffixLen = 8
 // also the instance's subdomain (<project>.<instancer_host>).
 const maxProjectNameLen = 63
 
+// DefaultComposeProjectPrefix is the readable prefix of team instance project
+// names when instancer.compose_project_prefix is not set.
+const DefaultComposeProjectPrefix = "polypwn"
+
 // BuildComposeProject returns the Docker Compose project name of a challenge
 // instance, which also names its Traefik router and subdomain. It is made of
-// a readable part (category, challenge name and team), truncated so the whole
+// a readable part (prefix, category, challenge name and team), truncated so the whole
 // name fits a 63-character DNS label, and the first 8 hex characters of a
 // SHA-1 of the instance's identity. The hash keeps apart instances whose
 // readable parts are equal: same-named challenges in different categories,
 // names that only differ in characters sanitization removes, or names cut by
 // the truncation.
-func BuildComposeProject(unique bool, category, challengeName, teamID string) string {
+//
+// prefix comes from instancer.compose_project_prefix. When it is empty, names
+// are unchanged: team instances use "polypwn-" and unique instances have no
+// prefix ("global-..."). When it is set, both start with it, so several
+// events sharing a worker get distinct, recognizable names. The prefix is
+// not part of the hashed identity.
+func BuildComposeProject(prefix string, unique bool, category, challengeName, teamID string) string {
 	var readable, identity string
 	if unique {
 		readable = "global-" + category + "-" + challengeName
+		if prefix != "" {
+			readable = prefix + "-" + readable
+		}
 		identity = "unique\x00" + category + "\x00" + challengeName
 	} else {
-		readable = "polypwn-" + category + "-" + challengeName + "-" + teamID
+		if prefix == "" {
+			prefix = DefaultComposeProjectPrefix
+		}
+		readable = prefix + "-" + category + "-" + challengeName + "-" + teamID
 		identity = "team\x00" + category + "\x00" + challengeName + "\x00" + teamID
 	}
 
