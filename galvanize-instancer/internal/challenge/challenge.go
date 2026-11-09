@@ -151,6 +151,7 @@ type Challenge struct {
 	Type             string                 `yaml:"type"`
 	Unique           bool                   `yaml:"-"`
 	InstanceGroup    string                 `yaml:"-"`
+	ShowTCPPorts     bool                   `yaml:"-"`
 	ResourceLimits   config.ResourceLimits  `yaml:"-"`
 	Dir              string                 `yaml:"-"`
 	DeployParameters map[string]interface{} `yaml:"deploy_parameters"`
@@ -327,6 +328,11 @@ func parseChallenge(challengeFilePath string) (*Challenge, error) {
 	}
 	if group := toStringField(challenge.DeployParameters, "instance_group"); group != "" {
 		challenge.InstanceGroup = group
+	}
+	if show, ok := challenge.DeployParameters["show_tcp_ports"]; ok {
+		if b, ok := show.(bool); ok && b {
+			challenge.ShowTCPPorts = true
+		}
 	}
 	if _, hasPorts := challenge.DeployParameters["published_ports"]; !hasPorts {
 		if port, ok := challenge.DeployParameters["port"]; ok && port != nil {

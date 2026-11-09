@@ -625,3 +625,36 @@ deploy_parameters:
 	assert.True(t, chall.Unique, "challenge with deploy_parameters.unique=true should have Unique=true")
 	assert.Equal(t, "unique_web", chall.Name)
 }
+
+func TestBuildIndex_ShowTCPPorts(t *testing.T) {
+	dir := t.TempDir()
+
+	writeChallenge(t, dir, "misc", `
+name: box
+category: misc
+playbook_name: http
+type: zync
+deploy_parameters:
+  show_tcp_ports: true
+  image: nginx:latest
+`)
+	writeChallenge(t, dir, "web", `
+name: plain
+category: web
+playbook_name: http
+type: zync
+deploy_parameters:
+  image: nginx:latest
+`)
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+
+	chall, err := idx.Get("misc", "box")
+	require.NoError(t, err)
+	assert.True(t, chall.ShowTCPPorts)
+
+	plain, err := idx.Get("web", "plain")
+	require.NoError(t, err)
+	assert.False(t, plain.ShowTCPPorts)
+}

@@ -93,7 +93,7 @@ func (a *AnsibleDeployer) Deploy(ctx context.Context, conf *config.Config, chall
 			return "", fmt.Errorf("no container info found in Ansible results")
 		}
 
-		connInfo, err := GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost, protocolHints)
+		connInfo, err := GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost, protocolHints, chall.ShowTCPPorts)
 		if err != nil {
 			return "", fmt.Errorf("failed to build connection info: %w", err)
 		}
