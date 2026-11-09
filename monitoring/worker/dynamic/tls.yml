@@ -1,0 +1,18 @@
+http:
+  routers:
+    acme-wildcard:
+      rule: "Host(`acme-wildcard.challs.example.com`)"
+      entryPoints:
+        - websecure
+      service: acme-noop
+      tls:
+        certResolver: le
+        domains:
+          - main: "challs.example.com"
+            sans:
+              - "*.challs.example.com"
+  services:
+    acme-noop:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9"

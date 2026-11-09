@@ -13,6 +13,8 @@ scrape_configs:
     #   password: <your-metrics-password>
 
   # Worker challenge traffic. Ports are UFW-restricted to the control plane.
+  # docker-stats-exporter (monitoring/docker-stats-exporter): per-container
+  # CPU, memory and network counters with cAdvisor-style metric names.
   - job_name: worker-cadvisor
     scrape_interval: 15s
     static_configs:
