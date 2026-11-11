@@ -16,8 +16,8 @@ func TestBuildComposeProject_SameNameDifferentCategories(t *testing.T) {
 	pwn := BuildComposeProject("", false, "pwn", "login", "team1")
 
 	assert.NotEqual(t, web, pwn)
-	assert.True(t, strings.HasPrefix(web, "polypwn-web-login-team1-"), web)
-	assert.True(t, strings.HasPrefix(pwn, "polypwn-pwn-login-team1-"), pwn)
+	assert.True(t, strings.HasPrefix(web, "ctf-event-web-login-team1-"), web)
+	assert.True(t, strings.HasPrefix(pwn, "ctf-event-pwn-login-team1-"), pwn)
 
 	assert.NotEqual(t,
 		BuildComposeProject("", true, "web", "login", ""),
@@ -26,7 +26,7 @@ func TestBuildComposeProject_SameNameDifferentCategories(t *testing.T) {
 
 func TestBuildComposeProject_Format(t *testing.T) {
 	// The example in data/challenges/example/http/challenge.yml
-	assert.Equal(t, "polypwn-web-example-http-team1-9448f1e7", BuildComposeProject("", false, "web", "example-http", "team1"))
+	assert.Equal(t, "ctf-event-web-example-http-team1-9448f1e7", BuildComposeProject("", false, "web", "example-http", "team1"))
 }
 
 func TestBuildComposeProject_SuffixDependsOnIdentity(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBuildComposeProject_UniqueAndTeamInstancesDiffer(t *testing.T) {
 	assert.NotEqual(t,
 		BuildComposeProject("", true, "web", "login", ""),
 		BuildComposeProject("", false, "web", "login", ""))
-	assert.True(t, strings.HasPrefix(BuildComposeProject("", true, "web", "login", ""), "global-web-login-"))
+	assert.True(t, strings.HasPrefix(BuildComposeProject("", true, "web", "login", ""), "ctf-event-global-web-login-"))
 }
 
 func TestBuildComposeProject_FitsOneDNSLabel(t *testing.T) {
@@ -72,7 +72,7 @@ func TestBuildComposeProject_ValidForAnyName(t *testing.T) {
 		assert.Regexp(t, validProject, p)
 	}
 	// Nothing readable left after sanitization but the prefix: still unique
-	assert.Regexp(t, `^global-[0-9a-f]{8}$`, BuildComposeProject("", true, "中文", "挑战", ""))
+	assert.Regexp(t, `^ctf-event-global-[0-9a-f]{8}$`, BuildComposeProject("", true, "中文", "挑战", ""))
 	assert.NotEqual(t, BuildComposeProject("", true, "中文", "挑战", ""), BuildComposeProject("", true, "日本", "語", ""))
 }
 
@@ -91,7 +91,7 @@ func TestLegacyComposeProject_DiffersFromNewName(t *testing.T) {
 func TestBuildComposeProject_CustomPrefix(t *testing.T) {
 	name := BuildComposeProject("unitedctf", false, "web", "login", "1")
 	assert.True(t, strings.HasPrefix(name, "unitedctf-web-login-1-"), name)
-	assert.NotContains(t, name, "polypwn")
+	assert.NotContains(t, name, DefaultComposeProjectPrefix)
 
 	global := BuildComposeProject("unitedctf", true, "web", "shared", "")
 	assert.True(t, strings.HasPrefix(global, "unitedctf-global-web-shared-"), global)
@@ -101,4 +101,13 @@ func TestBuildComposeProject_PrefixKeepsIdentityHash(t *testing.T) {
 	def := BuildComposeProject("", false, "web", "login", "1")
 	custom := BuildComposeProject("ctf", false, "web", "login", "1")
 	assert.Equal(t, def[len(def)-8:], custom[len(custom)-8:])
+}
+
+func TestLegacyComposeProjects_IncludesV074Names(t *testing.T) {
+	// What Galvanize v0.7.4 named these instances
+	assert.Contains(t, LegacyComposeProjects(false, "web", "example-http", "team1"), "polypwn-web-example-http-team1-9448f1e7")
+	unique := LegacyComposeProjects(true, "web", "login", "")
+	assert.Contains(t, unique, "global-login")
+	assert.Regexp(t, `^global-web-login-[0-9a-f]{8}$`, unique[1])
+	assert.NotContains(t, unique, BuildComposeProject("", true, "web", "login", ""))
 }

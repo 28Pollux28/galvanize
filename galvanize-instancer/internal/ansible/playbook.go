@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"maps"
 	"path"
+	"slices"
 
 	"github.com/28Pollux28/galvanize/internal/challenge"
 	"github.com/28Pollux28/galvanize/internal/docker"
@@ -80,11 +81,17 @@ func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Chall
 	maps.Copy(playbookOpts.ExtraVars, params)
 	maps.Copy(playbookOpts.ExtraVars, conf.Instancer.ExtraDeploymentParameters)
 
-	// Instances started by Galvanize v0.7.1 or earlier used another project
-	// name. The playbooks' delete tasks also remove a project left under that
-	// name, so upgrading does not leave running instances behind.
-	if legacy := docker.LegacyComposeProject(challenge.Unique, challenge.Name, teamID); legacy != composeProject {
-		playbookOpts.ExtraVars["legacy_compose_project"] = legacy
+	// Instances started by earlier Galvanize versions used other project
+	// names. The playbooks' delete tasks also remove projects left under
+	// those names, so upgrading does not leave running instances behind.
+	var legacy []string
+	for _, name := range docker.LegacyComposeProjects(challenge.Unique, challenge.Category, challenge.Name, teamID) {
+		if name != composeProject && !slices.Contains(legacy, name) {
+			legacy = append(legacy, name)
+		}
+	}
+	if len(legacy) > 0 {
+		playbookOpts.ExtraVars["legacy_compose_projects"] = legacy
 	}
 
 	// Merge resource limits (challenge overrides config defaults) and pass to Ansible

@@ -5,7 +5,7 @@ instancer:
   ansible_dir: "./data/playbooks" # Directory for Ansible playbooks
   challenge_dir: "./data/challenges" # Directory for challenge files
   instancer_host: "challs.example.com" # Public hostname of the deployer (will be used in domain names)
-  # compose_project_prefix: "myctf" # Optional readable prefix of instance names/subdomains (default: "polypwn-" for team instances, none for unique ones)
+  compose_project_prefix: "ctf-event" # Readable prefix of instance names/subdomains (default: "ctf-event")
   db_path: "./data/deployer.sqlite" # Path to SQLite database
   deployment_ttl: "1h" # Time-to-live for deployments (default: 1h)
   deployment_ttl_extension: "30m" # Time to extend deployment TTL with on extension request (default: 30m)

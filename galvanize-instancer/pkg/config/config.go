@@ -47,7 +47,7 @@ type InstancerConfig struct {
 	AnsibleDir                string                 `mapstructure:"ansible_dir"`                           // Directory where Ansible playbooks are located
 	ChallengeDir              string                 `mapstructure:"challenge_dir"`                         // Directory where challenge playbooks are stored
 	InstancerHost             string                 `mapstructure:"instancer_host"`                        // Hostname of the node where challenges will be deployed
-	ComposeProjectPrefix      string                 `mapstructure:"compose_project_prefix,omitempty"`      // Prefix for compose project / instance subdomains (default: "polypwn")
+	ComposeProjectPrefix      string                 `mapstructure:"compose_project_prefix,omitempty"`      // Prefix for compose project / instance subdomains (default: "ctf-event")
 	DBPath                    string                 `mapstructure:"db_path"`                               // Path to the database file
 	DeploymentTTL             time.Duration          `mapstructure:"deployment_ttl,omitempty"`              // Time-to-live for deployments
 	DeploymentTTLExtension    time.Duration          `mapstructure:"deployment_ttl_extension,omitempty"`    // Duration to extend deployment TTL
