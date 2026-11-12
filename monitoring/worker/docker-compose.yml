@@ -1,0 +1,113 @@
+# Worker ("chall-edge") stack: runs next to the challenge containers on the
+# Ansible target host. Traefik routes *.challs.<domain> to instances and
+# writes the JSON access log Promtail ships to Loki; docker-stats-exporter
+# (:8088) and Traefik metrics (:8082) are scraped by the control-plane
+# Prometheus (see ../prometheus.yml). Restrict 8082/8088 to the control plane.
+#
+#   cp cf.env.example cf.env   # Cloudflare token for the DNS-01 wildcard cert
+#   docker network create traefik
+#   docker compose up -d
+
+name: chall-edge
+
+services:
+  traefik:
+    image: traefik:v3.6.2
+    container_name: traefik
+    restart: unless-stopped
+    env_file:
+      - cf.env
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=traefik
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.http.tls=true
+      - --certificatesresolvers.le.acme.email=admin@example.com
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.dnschallenge=true
+      - --certificatesresolvers.le.acme.dnschallenge.provider=cloudflare
+      - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --ping=true
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entryPoint=metrics
+      - --metrics.prometheus.addEntryPointsLabels=true
+      - --metrics.prometheus.addRoutersLabels=false
+      - --metrics.prometheus.addServicesLabels=false
+      - --entrypoints.metrics.address=:8082
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.filepath=/var/log/traefik/access.log
+      - --accesslog.bufferingsize=100
+      - --accesslog.fields.headers.defaultmode=drop
+      - --accesslog.fields.headers.names.User-Agent=keep
+      - --accesslog.fields.headers.names.Referer=keep
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8082:8082"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - /var/log/traefik:/var/log/traefik
+    networks:
+      - traefik
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  docker-stats:
+    build: ../docker-stats-exporter
+    image: galvanize/docker-stats-exporter:latest
+    container_name: docker-stats-exporter
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDRESS: 0.0.0.0:8080
+    ports:
+      - "8088:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+
+  tcp-access:
+    build: ../tcp-access-logger
+    image: galvanize/tcp-access-logger:latest
+    container_name: tcp-access-logger
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      CAPTURE_IFACE: eth0
+      LOG_PATH: /var/log/tcp-access/access.log
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/tcp-access:/var/log/tcp-access
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: promtail
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - ../promtail.yml:/etc/promtail/config.yml:ro
+      - /var/log/traefik:/var/log/traefik:ro
+      - /var/log/tcp-access:/var/log/tcp-access:ro
+
+networks:
+  traefik:
+    name: traefik
+    external: true
+
+volumes:
+  letsencrypt:

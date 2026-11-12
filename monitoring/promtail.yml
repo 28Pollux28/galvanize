@@ -1,0 +1,53 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://<control-plane-ip>:3100/loki/api/v1/push
+    backoff_config:
+      max_retries: 10
+
+scrape_configs:
+  - job_name: traefik-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: worker-traefik-access
+          host: worker
+          __path__: /var/log/traefik/access.log
+    pipeline_stages:
+      - drop:
+          expression: '^[^\{]'
+      - json:
+          expressions:
+            RequestHost: RequestHost
+            RequestPath: RequestPath
+            RequestMethod: RequestMethod
+            ClientHost: ClientHost
+            DownstreamStatus: DownstreamStatus
+      - labels:
+          RequestMethod:
+
+  - job_name: tcp-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: worker-tcp-access
+          host: worker
+          __path__: /var/log/tcp-access/access.log
+    pipeline_stages:
+      - drop:
+          expression: '^[^\{]'
+      - json:
+          expressions:
+            ClientHost: ClientHost
+            DstPort: DstPort
+            container: container
+            event: event
+      - labels:
+          event:

@@ -11,3 +11,4 @@ docker-compose.local.yml
 config.yaml
 coverage.out
 openapi.yaml
+monitoring/worker/cf.env

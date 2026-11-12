@@ -20,7 +20,8 @@ RUN useradd -ms /bin/bash galvanize
 RUN apt-get update && apt-get install -y curl pipx ssh-client tini \
     && rm -rf /var/lib/apt/lists/* \
     && pipx ensurepath --global \
-    && pipx install --include-deps --global ansible
+    && pipx install --include-deps --global ansible \
+    && ansible-galaxy collection install community.docker -p /usr/share/ansible/collections
 WORKDIR /app
 RUN mkdir "data"
 COPY ./data/playbooks ./data/playbooks

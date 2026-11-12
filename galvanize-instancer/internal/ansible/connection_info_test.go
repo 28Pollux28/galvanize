@@ -48,7 +48,7 @@ func TestGetConnectionInfo_UsesHintedProtocolWhenProvided(t *testing.T) {
 		},
 	}
 
-	conn, err := GetConnectionInfo(containers, "instancer.example.com", map[int]string{22: "ssh"})
+	conn, err := GetConnectionInfo(containers, "instancer.example.com", map[int]string{22: "ssh"}, false)
 	require.NoError(t, err)
 	assert.Equal(t, "ssh://instancer.example.com:40022\ntcp://instancer.example.com:40080", conn)
 }
@@ -62,9 +62,51 @@ func TestGetConnectionInfo_UsesDockerProtocolWhenNoHint(t *testing.T) {
 		},
 	}
 
-	conn, err := GetConnectionInfo(containers, "instancer.example.com", nil)
+	conn, err := GetConnectionInfo(containers, "instancer.example.com", nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, "tcp://instancer.example.com:40022", conn)
+}
+
+func bouglois() []ContainerInfo {
+	return []ContainerInfo{
+		{
+			Labels: map[string]string{
+				"traefik.enable":                "true",
+				"traefik.http.routers.box.rule": "Host(`box-1.challs.example.com`)",
+			},
+			Publishers: []PublisherInfo{
+				{Protocol: "tcp", PublishedPort: 39521, TargetPort: 445, URL: "0.0.0.0"},
+				{Protocol: "tcp", PublishedPort: 39521, TargetPort: 445, URL: "::"},
+				{Protocol: "tcp", PublishedPort: 51040, TargetPort: 22, URL: "0.0.0.0"},
+				{Protocol: "tcp", PublishedPort: 48156, TargetPort: 139, URL: "0.0.0.0"},
+			},
+		},
+	}
+}
+
+func TestGetConnectionInfo_HTTPHidesTCPPortsByDefault(t *testing.T) {
+	conn, err := GetConnectionInfo(bouglois(), "challs.example.com", nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://box-1.challs.example.com/", conn)
+}
+
+func TestGetConnectionInfo_ShowTCPPortsListsHTTPThenPorts(t *testing.T) {
+	conn, err := GetConnectionInfo(bouglois(), "challs.example.com", map[int]string{22: "tcp", 139: "tcp", 445: "tcp"}, true)
+	require.NoError(t, err)
+	assert.Equal(t, "https://box-1.challs.example.com/\n"+
+		"tcp://challs.example.com:51040\n"+
+		"tcp://challs.example.com:48156\n"+
+		"tcp://challs.example.com:39521", conn)
+}
+
+func TestGetConnectionInfo_ShowTCPPortsWithoutHTTP(t *testing.T) {
+	containers := []ContainerInfo{
+		{Publishers: []PublisherInfo{{Protocol: "tcp", PublishedPort: 40022, TargetPort: 22, URL: "0.0.0.0"}}},
+		{Publishers: []PublisherInfo{{Protocol: "tcp", PublishedPort: 40001, TargetPort: 1, URL: "0.0.0.0"}}},
+	}
+	conn, err := GetConnectionInfo(containers, "challs.example.com", nil, true)
+	require.NoError(t, err)
+	assert.Equal(t, "tcp://challs.example.com:40001\ntcp://challs.example.com:40022", conn)
 }
 
 func TestNormalizePublishedPorts_RandomizeHostPorts_WhenEnabled(t *testing.T) {

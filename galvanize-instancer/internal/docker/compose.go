@@ -42,24 +42,41 @@ const projectSuffixLen = 8
 // also the instance's subdomain (<project>.<instancer_host>).
 const maxProjectNameLen = 63
 
+// DefaultComposeProjectPrefix is the readable prefix of instance project
+// names when instancer.compose_project_prefix is not set.
+const DefaultComposeProjectPrefix = "ctf-event"
+
 // BuildComposeProject returns the Docker Compose project name of a challenge
 // instance, which also names its Traefik router and subdomain. It is made of
-// a readable part (category, challenge name and team), truncated so the whole
+// a readable part (prefix, category, challenge name and team), truncated so the whole
 // name fits a 63-character DNS label, and the first 8 hex characters of a
 // SHA-1 of the instance's identity. The hash keeps apart instances whose
 // readable parts are equal: same-named challenges in different categories,
 // names that only differ in characters sanitization removes, or names cut by
 // the truncation.
-func BuildComposeProject(unique bool, category, challengeName, teamID string) string {
-	var readable, identity string
-	if unique {
-		readable = "global-" + category + "-" + challengeName
-		identity = "unique\x00" + category + "\x00" + challengeName
-	} else {
-		readable = "polypwn-" + category + "-" + challengeName + "-" + teamID
-		identity = "team\x00" + category + "\x00" + challengeName + "\x00" + teamID
+//
+// prefix comes from instancer.compose_project_prefix and defaults to
+// DefaultComposeProjectPrefix. Team instances are named
+// "<prefix>-<category>-<name>-<team>-<hash>" and unique instances
+// "<prefix>-global-<category>-<name>-<hash>". The prefix is not part of the
+// hashed identity.
+func BuildComposeProject(prefix string, unique bool, category, challengeName, teamID string) string {
+	if prefix == "" {
+		prefix = DefaultComposeProjectPrefix
 	}
+	if unique {
+		return hashedProjectName(prefix+"-global-"+category+"-"+challengeName, unique, category, challengeName, teamID)
+	}
+	return hashedProjectName(prefix+"-"+category+"-"+challengeName+"-"+teamID, unique, category, challengeName, teamID)
+}
 
+// hashedProjectName sanitizes and truncates readable, then appends the hash
+// of the instance's identity.
+func hashedProjectName(readable string, unique bool, category, challengeName, teamID string) string {
+	identity := "team\x00" + category + "\x00" + challengeName + "\x00" + teamID
+	if unique {
+		identity = "unique\x00" + category + "\x00" + challengeName
+	}
 	sum := sha1.Sum([]byte(identity))
 	suffix := hex.EncodeToString(sum[:])[:projectSuffixLen]
 
@@ -68,6 +85,22 @@ func BuildComposeProject(unique bool, category, challengeName, teamID string) st
 		readable = strings.TrimRight(readable[:maxReadable], "-_")
 	}
 	return readable + "-" + suffix
+}
+
+// LegacyComposeProjects returns the project names earlier Galvanize versions
+// gave an instance: v0.7.1 and earlier (see LegacyComposeProject), and v0.7.2
+// to v0.7.4, which used a fixed "polypwn-" prefix for team instances and none
+// for unique ones. They are kept only so instances started before an upgrade
+// can still be terminated.
+func LegacyComposeProjects(unique bool, category, challengeName, teamID string) []string {
+	v074 := "polypwn-" + category + "-" + challengeName + "-" + teamID
+	if unique {
+		v074 = "global-" + category + "-" + challengeName
+	}
+	return []string{
+		LegacyComposeProject(unique, challengeName, teamID),
+		hashedProjectName(v074, unique, category, challengeName, teamID),
+	}
 }
 
 // LegacyComposeProject returns the project name Galvanize v0.7.1 and earlier

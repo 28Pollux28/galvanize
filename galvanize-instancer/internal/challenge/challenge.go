@@ -13,6 +13,19 @@ import (
 	"go.uber.org/zap"
 )
 
+// isChallengeDefFile reports whether name is a challenge definition file:
+// challenge.yml / challenge.yaml, or a numbered variant such as
+// challenge-1.yml, so one directory can hold several challenges.
+func isChallengeDefFile(name string) bool {
+	if name == "challenge.yml" || name == "challenge.yaml" {
+		return true
+	}
+	if !strings.HasPrefix(name, "challenge-") {
+		return false
+	}
+	return strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")
+}
+
 // composeFileNames lists the standard Docker Compose file names that are
 // auto-detected next to a challenge.yml, in the order Docker Compose itself
 // resolves them.
@@ -137,9 +150,24 @@ type Challenge struct {
 	PlaybookName     string                 `yaml:"playbook_name"`
 	Type             string                 `yaml:"type"`
 	Unique           bool                   `yaml:"-"`
+	InstanceGroup    string                 `yaml:"-"`
+	ShowTCPPorts     bool                   `yaml:"-"`
 	ResourceLimits   config.ResourceLimits  `yaml:"-"`
 	Dir              string                 `yaml:"-"`
 	DeployParameters map[string]interface{} `yaml:"deploy_parameters"`
+}
+
+// InstanceKey is the name deployments of this challenge are stored and
+// deployed under: deploy_parameters.instance_group when set (so several
+// challenge entries share one instance), the challenge name otherwise.
+func (c *Challenge) InstanceKey() string {
+	if c != nil && strings.TrimSpace(c.InstanceGroup) != "" {
+		return c.InstanceGroup
+	}
+	if c == nil {
+		return ""
+	}
+	return c.Name
 }
 
 func NewChallengeIndex(baseDir string) (*ChallengeIndex, error) {
@@ -187,28 +215,28 @@ func (idx *ChallengeIndex) BuildIndex(baseDir string) error {
 			}
 			return nil
 		}
-		if d.Name() != "challenge.yml" && d.Name() != "challenge.yaml" {
+		if !isChallengeDefFile(d.Name()) {
 			return nil
 		}
-		// Parse challenge.yml to get category and name
 		chall, err := parseChallenge(path)
 		if err != nil {
 			skip(path, err.Error())
-			return filepath.SkipDir
+			// nil, not SkipDir: a directory can hold several challenge-*.yml
+			// files and one bad file must not hide its siblings.
+			return nil
 		}
 		if chall.Type != "zync" {
-			return filepath.SkipDir
+			return nil
 		}
 		key := chall.Category + "/" + chall.Name
 		if first, ok := paths[key]; ok {
 			skip(path, fmt.Sprintf("duplicate of %s (both declare %s)", first, key))
-			return filepath.SkipDir
+			return nil
 		}
 		challs[key] = chall
 		paths[key] = path
 		zap.S().Infof("Registered challenge: %s", key)
-
-		return filepath.SkipDir
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("index %s: %w", baseDir, err)
@@ -232,11 +260,18 @@ func (idx *ChallengeIndex) Get(category, name string) (*Challenge, error) {
 	key := category + "/" + name
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	chall, ok := idx.challs[key]
-	if !ok {
-		return nil, fmt.Errorf("challenge not found: %s", key)
+	if chall, ok := idx.challs[key]; ok {
+		return chall, nil
 	}
-	return chall, nil
+	for _, chall := range idx.challs {
+		if !strings.EqualFold(chall.Category, category) {
+			continue
+		}
+		if chall.Name == name || strings.EqualFold(chall.InstanceGroup, name) {
+			return chall, nil
+		}
+	}
+	return nil, fmt.Errorf("challenge not found: %s", key)
 }
 
 func (idx *ChallengeIndex) GetAllUnique() []*Challenge {
@@ -289,6 +324,26 @@ func parseChallenge(challengeFilePath string) (*Challenge, error) {
 	if unique, ok := challenge.DeployParameters["unique"]; ok {
 		if b, ok := unique.(bool); ok && b {
 			challenge.Unique = true
+		}
+	}
+	if group := toStringField(challenge.DeployParameters, "instance_group"); group != "" {
+		challenge.InstanceGroup = group
+	}
+	if show, ok := challenge.DeployParameters["show_tcp_ports"]; ok {
+		if b, ok := show.(bool); ok && b {
+			challenge.ShowTCPPorts = true
+		}
+	}
+	if _, hasPorts := challenge.DeployParameters["published_ports"]; !hasPorts {
+		if port, ok := challenge.DeployParameters["port"]; ok && port != nil {
+			challenge.DeployParameters["published_ports"] = []interface{}{port}
+		}
+	}
+	if challenge.PlaybookName == "http" {
+		if _, hasHTTP := challenge.DeployParameters["http_port"]; !hasHTTP {
+			if port, ok := challenge.DeployParameters["port"]; ok && port != nil {
+				challenge.DeployParameters["http_port"] = port
+			}
 		}
 	}
 

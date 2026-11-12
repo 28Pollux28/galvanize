@@ -109,12 +109,12 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 		return ctx.JSON(400, api.Error{Message: utils.Ptr("Challenge is not unique")})
 	}
 
-	id := instanceLockKey(chall.Category, chall.Name, "")
+	id := instanceLockKey(chall.Category, chall.InstanceKey(), "")
 	s.kmu.LockKey(id)
-	existingDeployment, err := models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
+	existingDeployment, err := models.GetUniqueDeployment(s.db, chall.Category, chall.InstanceKey(), false)
 	if err == nil && existingDeployment != nil {
 		_ = s.kmu.UnlockKey(id)
-		pkgmetrics.DeployConflictTotal.WithLabelValues(chall.Category, chall.Name).Inc()
+		pkgmetrics.DeployConflictTotal.WithLabelValues(chall.Category, chall.InstanceKey()).Inc()
 		return ctx.JSON(409, api.Error{Message: utils.Ptr("Challenge already deployed")})
 	}
 	if err != nil && !errors.Is(err, models.ErrNotFound) {
@@ -124,7 +124,7 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 	}
 
 	s.wg.Add(1)
-	_, err = models.CreateUniqueDeployment(s.db, chall.Name, chall.Category)
+	_, err = models.CreateUniqueDeployment(s.db, chall.InstanceKey(), chall.Category)
 	if err != nil {
 		_ = s.kmu.UnlockKey(id)
 		s.wg.Done()
@@ -136,7 +136,7 @@ func (s *Server) DeployAdminInstance(ctx echo.Context) error {
 	conf := s.confProv.GetConfig()
 	go func() {
 		defer s.wg.Done()
-		deployment, dbErr := models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
+		deployment, dbErr := models.GetUniqueDeployment(s.db, chall.Category, chall.InstanceKey(), false)
 		if dbErr != nil {
 			zap.S().Errorf("Failed to get deployment for update: %v", dbErr)
 			return
@@ -187,9 +187,14 @@ func (s *Server) TerminateAdminInstance(ctx echo.Context) error {
 	}
 	zap.S().Infof("Admin terminate request received for challenge %s", req.ChallengeName)
 
+	instanceKey := req.ChallengeName
+	if chall, err := s.challIdx.Get(req.Category, req.ChallengeName); err == nil {
+		instanceKey = chall.InstanceKey()
+	}
+
 	s.wg.Add(1)
 	tx := s.db.Begin()
-	deployment, err := models.GetUniqueDeployment(tx, req.Category, req.ChallengeName, true)
+	deployment, err := models.GetUniqueDeployment(tx, req.Category, instanceKey, true)
 	if err != nil {
 		tx.Rollback()
 		s.wg.Done()
@@ -258,7 +263,7 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 
 	for _, chall := range uniqueChallenges {
 		// Check if already deployed
-		existingDeployment, err := models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
+		existingDeployment, err := models.GetUniqueDeployment(s.db, chall.Category, chall.InstanceKey(), false)
 		if err == nil && existingDeployment != nil {
 			zap.S().Debugf("Challenge %s already deployed, skipping", chall.Name)
 			continue
@@ -266,7 +271,7 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 
 		// Create deployment record
 		s.wg.Add(1)
-		_, err = models.CreateUniqueDeployment(s.db, chall.Name, chall.Category)
+		_, err = models.CreateUniqueDeployment(s.db, chall.InstanceKey(), chall.Category)
 		if err != nil {
 			s.wg.Done()
 			zap.S().Errorf("Failed to create deployment record for %s: %v", chall.Name, err)
@@ -282,7 +287,7 @@ func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 		// Deploy in goroutine
 		go func(ch *challenge.Challenge) {
 			defer s.wg.Done()
-			deployment, dbErr := models.GetUniqueDeployment(s.db, ch.Category, ch.Name, false)
+			deployment, dbErr := models.GetUniqueDeployment(s.db, ch.Category, ch.InstanceKey(), false)
 			if dbErr != nil {
 				zap.S().Errorf("Failed to get deployment for %s: %v", ch.Name, dbErr)
 				return

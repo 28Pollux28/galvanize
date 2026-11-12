@@ -66,7 +66,7 @@ func applyComposeExposures(conf *config.Config, chall *challenge.Challenge, team
 		return nil, fmt.Errorf("compose definition has no services map")
 	}
 
-	project := docker.BuildComposeProject(chall.Unique, chall.Category, chall.Name, teamID)
+	project := docker.BuildComposeProject(conf.Instancer.ComposeProjectPrefix, chall.Unique, chall.Category, chall.InstanceKey(), teamID)
 	domainRoot := conf.Instancer.InstancerHost
 	traefikNetwork, _ := conf.Instancer.ExtraDeploymentParameters[traefikNetworkParam].(string)
 
@@ -94,7 +94,7 @@ func applyComposeExposures(conf *config.Config, chall *challenge.Challenge, team
 			routerName := project
 			domain := project + "." + domainRoot
 			if httpCount > 1 {
-				routerName = docker.SanitizeProjectName(exp.Service+"-"+project)
+				routerName = docker.SanitizeProjectName(exp.Service + "-" + project)
 				domain = docker.SanitizeProjectName(exp.Service+"-"+project) + "." + domainRoot
 			}
 			applyTraefikLabels(svc, routerName, domain, exp.Port)
@@ -167,11 +167,17 @@ func normalizeLabels(existing interface{}) map[string]interface{} {
 }
 
 // attachNetwork ensures a service is connected to the named network, preserving
-// any existing network configuration.
+// any existing network configuration. A service with no networks key is on
+// Compose's implicit default network; listing only the new network would drop
+// that and isolate it from sibling services (e.g. app → db).
 func attachNetwork(svc map[string]interface{}, network string) {
 	switch v := svc["networks"].(type) {
 	case nil:
-		svc["networks"] = []interface{}{network}
+		if network == "default" {
+			svc["networks"] = []interface{}{network}
+		} else {
+			svc["networks"] = []interface{}{"default", network}
+		}
 	case []interface{}:
 		for _, n := range v {
 			if s, ok := n.(string); ok && s == network {

@@ -174,12 +174,13 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 		zap.S().Errorf("Attempt to deploy unique challenge %s for team %s", req.ChallengeName, claims.TeamID)
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
-	id := instanceLockKey(chall.Category, chall.Name, claims.TeamID)
+	instanceKey := chall.InstanceKey()
+	id := instanceLockKey(chall.Category, instanceKey, claims.TeamID)
 	s.kmu.LockKey(id)
-	existingDeployment, err := models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
+	existingDeployment, err := models.GetDeployment(s.db, chall.Category, instanceKey, claims.TeamID, false)
 	if err == nil && existingDeployment != nil {
 		_ = s.kmu.UnlockKey(id)
-		pkgmetrics.DeployConflictTotal.WithLabelValues(chall.Category, chall.Name).Inc()
+		pkgmetrics.DeployConflictTotal.WithLabelValues(chall.Category, instanceKey).Inc()
 		return ctx.JSON(409, api.Error{Message: utils.Ptr("Challenge already deployed for this team")})
 	}
 	if err != nil && !errors.Is(err, models.ErrNotFound) {
@@ -189,7 +190,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 	}
 	conf := s.confProv.GetConfig()
 
-	deployment, err := models.CreateDeployment(s.db, chall.Name, claims.TeamID, chall.Category, conf.Instancer.DeploymentTTL, conf.Instancer.DeploymentMaxExtensions)
+	deployment, err := models.CreateDeployment(s.db, instanceKey, claims.TeamID, chall.Category, conf.Instancer.DeploymentTTL, conf.Instancer.DeploymentMaxExtensions)
 	if err != nil {
 		_ = s.kmu.UnlockKey(id)
 		zap.S().Errorf("Failed to create deployment record: %v", err)
@@ -199,7 +200,7 @@ func (s *Server) DeployInstance(ctx echo.Context) error {
 
 	// If we have a job queue, enqueue the deploy job
 	if s.jobQueue != nil {
-		job := worker.NewDeployJob(chall.Category, chall.Name, claims.TeamID, deployment.ID)
+		job := worker.NewDeployJob(chall.Category, instanceKey, claims.TeamID, deployment.ID)
 		if err := s.jobQueue.Enqueue(ctx.Request().Context(), job); err != nil {
 			zap.S().Errorf("Failed to enqueue deploy job: %v", err)
 			_ = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to queue deployment")
@@ -258,10 +259,10 @@ func (s *Server) GetInstanceStatus(ctx echo.Context) error {
 	var deployment *models.Deployment
 	if chall.Unique {
 		zap.S().Debugf("Status request received for challenge %s", chall.Name)
-		deployment, err = models.GetUniqueDeployment(s.db, chall.Category, chall.Name, false)
+		deployment, err = models.GetUniqueDeployment(s.db, chall.Category, chall.InstanceKey(), false)
 	} else {
 		zap.S().Debugf("Status request received for challenge %s for team %s", claims.ChallengeName, claims.TeamID)
-		deployment, err = models.GetDeployment(s.db, chall.Category, chall.Name, claims.TeamID, false)
+		deployment, err = models.GetDeployment(s.db, chall.Category, chall.InstanceKey(), claims.TeamID, false)
 	}
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
@@ -314,7 +315,11 @@ func (s *Server) ExtendInstance(ctx echo.Context) error {
 	}
 	zap.S().Debugf("Extend request received for challenge %s for team %s", claims.ChallengeName, claims.TeamID)
 
-	d, err := models.GetDeployment(s.db, claims.Category, claims.ChallengeName, claims.TeamID, false)
+	chall, err := s.challIdx.Get(claims.Category, claims.ChallengeName)
+	if err != nil {
+		return ctx.JSON(400, api.Error{Message: utils.Ptr("Invalid challenge")})
+	}
+	d, err := models.GetDeployment(s.db, chall.Category, chall.InstanceKey(), claims.TeamID, false)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			return ctx.NoContent(404)
@@ -372,8 +377,13 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 		return ctx.JSON(403, api.Error{Message: utils.Ptr("Unauthorized")})
 	}
 
+	chall, challErr := s.challIdx.Get(claims.Category, claims.ChallengeName)
+	if challErr != nil {
+		return ctx.JSON(400, api.Error{Message: utils.Ptr("Invalid challenge")})
+	}
+
 	tx := s.db.Begin()
-	deployment, err := models.GetDeployment(tx, claims.Category, claims.ChallengeName, claims.TeamID, true)
+	deployment, err := models.GetDeployment(tx, chall.Category, chall.InstanceKey(), claims.TeamID, true)
 	if err != nil {
 		tx.Rollback()
 		if errors.Is(err, models.ErrNotFound) {
@@ -396,12 +406,7 @@ func (s *Server) TerminateInstance(ctx echo.Context) error {
 
 	// If we have a job queue, enqueue the terminate job
 	if s.jobQueue != nil {
-		chall, challErr := s.challIdx.Get(claims.Category, claims.ChallengeName)
-		if challErr != nil {
-			zap.S().Errorf("Failed to get challenge for terminate: %v", challErr)
-			return ctx.JSON(500, api.Error{Message: utils.HTTP500Debug("Failed to get challenge info")})
-		}
-		job := worker.NewTerminateJob(chall.Category, chall.Name, claims.TeamID, deployment.ID)
+		job := worker.NewTerminateJob(chall.Category, chall.InstanceKey(), claims.TeamID, deployment.ID)
 		if err := s.jobQueue.Enqueue(ctx.Request().Context(), job); err != nil {
 			zap.S().Errorf("Failed to enqueue terminate job: %v", err)
 			_ = models.UpdateDeploymentStatus(s.db, deployment, models.DeploymentStatusError, "", "Failed to queue termination")

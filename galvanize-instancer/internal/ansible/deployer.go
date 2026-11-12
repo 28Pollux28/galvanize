@@ -35,7 +35,7 @@ type AnsibleDeployer struct{}
 var _ Deployer = (*AnsibleDeployer)(nil)
 
 func deploymentKey(chall *challenge.Challenge, teamID string) string {
-	return chall.Category + "/" + chall.Name + ":" + teamID
+	return chall.Category + "/" + chall.InstanceKey() + ":" + teamID
 }
 
 func (a *AnsibleDeployer) Deploy(ctx context.Context, conf *config.Config, chall *challenge.Challenge, teamID string) (string, error) {
@@ -93,7 +93,7 @@ func (a *AnsibleDeployer) Deploy(ctx context.Context, conf *config.Config, chall
 			return "", fmt.Errorf("no container info found in Ansible results")
 		}
 
-		connInfo, err := GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost, protocolHints)
+		connInfo, err := GetConnectionInfo(containerInfos, conf.Instancer.InstancerHost, protocolHints, chall.ShowTCPPorts)
 		if err != nil {
 			return "", fmt.Errorf("failed to build connection info: %w", err)
 		}

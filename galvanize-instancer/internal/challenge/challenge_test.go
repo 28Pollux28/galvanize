@@ -301,13 +301,90 @@ deploy_parameters:
 	idx, err := NewChallengeIndex(dir)
 	require.NoError(t, err)
 
+	got, err := idx.Get("Web", "http")
+	require.NoError(t, err)
+	assert.Equal(t, "web", got.Category)
+
 	_, err = idx.Get("web", "doesnotexist")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "challenge not found")
+}
 
-	_, err = idx.Get("nonexistent", "http")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "challenge not found")
+func TestBuildIndex_NumberedChallengeFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "reverse/custom-os", "challenge-1.yml", `
+name: Custom OS 1
+category: reverse
+type: zync
+playbook_name: tcp
+deploy_parameters:
+  image: custom-os:latest
+  port: 31337
+  unique: true
+`)
+	writeFile(t, dir, "reverse/custom-os", "challenge-2.yml", `
+name: Custom OS 2
+category: reverse
+type: zync
+playbook_name: tcp
+deploy_parameters:
+  image: custom-os:latest
+  port: 31337
+  unique: true
+`)
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+
+	one, err := idx.Get("reverse", "Custom OS 1")
+	require.NoError(t, err)
+	assert.True(t, one.Unique)
+	assert.Equal(t, []interface{}{31337}, one.DeployParameters["published_ports"])
+
+	_, err = idx.Get("reverse", "Custom OS 2")
+	require.NoError(t, err)
+	assert.Len(t, idx.GetAll(), 2)
+}
+
+func TestInstanceGroup_SharedKey(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "reverse/custom-os", "challenge-1.yml", `
+name: Custom OS 1
+category: reverse
+type: zync
+playbook_name: tcp
+deploy_parameters:
+  image: custom-os:latest
+  port: 31337
+  unique: false
+  instance_group: custom-os
+`)
+	writeFile(t, dir, "reverse/custom-os", "challenge-2.yml", `
+name: Custom OS 2
+category: reverse
+type: zync
+playbook_name: tcp
+deploy_parameters:
+  image: custom-os:latest
+  port: 31337
+  unique: false
+  instance_group: custom-os
+`)
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+
+	one, err := idx.Get("reverse", "Custom OS 1")
+	require.NoError(t, err)
+	two, err := idx.Get("reverse", "Custom OS 2")
+	require.NoError(t, err)
+	assert.Equal(t, "custom-os", one.InstanceKey())
+	assert.Equal(t, two.InstanceKey(), one.InstanceKey())
+	assert.False(t, one.Unique)
+
+	byGroup, err := idx.Get("reverse", "custom-os")
+	require.NoError(t, err)
+	assert.Equal(t, "custom-os", byGroup.InstanceKey())
 }
 
 func TestGetAllUnique(t *testing.T) {
@@ -547,4 +624,37 @@ deploy_parameters:
 	require.NoError(t, err)
 	assert.True(t, chall.Unique, "challenge with deploy_parameters.unique=true should have Unique=true")
 	assert.Equal(t, "unique_web", chall.Name)
+}
+
+func TestBuildIndex_ShowTCPPorts(t *testing.T) {
+	dir := t.TempDir()
+
+	writeChallenge(t, dir, "misc", `
+name: box
+category: misc
+playbook_name: http
+type: zync
+deploy_parameters:
+  show_tcp_ports: true
+  image: nginx:latest
+`)
+	writeChallenge(t, dir, "web", `
+name: plain
+category: web
+playbook_name: http
+type: zync
+deploy_parameters:
+  image: nginx:latest
+`)
+
+	idx, err := NewChallengeIndex(dir)
+	require.NoError(t, err)
+
+	chall, err := idx.Get("misc", "box")
+	require.NoError(t, err)
+	assert.True(t, chall.ShowTCPPorts)
+
+	plain, err := idx.Get("web", "plain")
+	require.NoError(t, err)
+	assert.False(t, plain.ShowTCPPorts)
 }

@@ -24,7 +24,7 @@
 
     - name: Build compose definition
       ansible.builtin.set_fact:
-        compose_definition:
+        _compose_def:
           services:
             tcp: "{{ _tcp_service }}"
       tags:
@@ -33,24 +33,29 @@
 
     - name: Déploiement du docker-compose
       community.docker.docker_compose_v2:
-        definition: "{{ compose_definition }}"
+        definition: "{{ _compose_def }}"
         project_name: "{{ compose_project }}"
         pull: missing
       tags: create
 
+    - name: Arrêt des conteneurs
+      ansible.builtin.command: "docker compose -p {{ compose_project }} kill"
+      failed_when: false
+      tags: delete
+
     - name: Arrêt et suppression du docker-compose
       community.docker.docker_compose_v2:
-        definition: "{{ compose_definition }}"
+        definition: "{{ _compose_def }}"
         project_name: "{{ compose_project }}"
         state: absent
       tags: delete
 
-    # Instances started by Galvanize v0.7.1 or earlier have another project
-    # name (legacy_compose_project, set when it differs): remove such a
-    # leftover too. A no-op when there is none, and never fails the run.
-    - name: Remove an instance left under its previous project name
-      ansible.builtin.command: "docker compose -p {{ legacy_compose_project }} down --remove-orphans"
-      when: legacy_compose_project is defined
+    # Instances started by earlier Galvanize versions have other project
+    # names (legacy_compose_projects, those that differ): remove such
+    # leftovers too. A no-op when there are none, and never fails the run.
+    - name: Remove an instance left under a previous project name
+      ansible.builtin.command: "docker compose -p {{ item }} down --remove-orphans"
+      loop: "{{ legacy_compose_projects | default([]) }}"
       changed_when: false
       failed_when: false
       tags:
