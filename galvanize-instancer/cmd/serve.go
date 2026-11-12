@@ -56,9 +56,9 @@ var serveCmd = &cobra.Command{
 		// 2. Middleware
 		useMiddleware(e)
 
-		// 3. Prometheus
+		// 3. Prometheus: request metrics are gathered here and served by the
+		// metrics server on :5001 only, never on the API port
 		e.Use(echoprometheus.NewMiddleware("instancer")) // register middleware to gather metrics from requests
-		e.GET("/metrics", echoprometheus.NewHandler())
 
 		// JWT secret from env (for security);
 		jwtSecret := os.Getenv("JWT_SECRET")
@@ -83,16 +83,7 @@ var serveCmd = &cobra.Command{
 		cfg.Instancer.AnsibleDir = ansiblePath
 
 		// 4. Auth
-		jwtConfig := echojwt.Config{
-			NewClaimsFunc: func(c echo.Context) jwt.Claims {
-				return new(auth.Claims)
-			},
-			SigningKey: []byte(jwtSecret),
-			Skipper: func(c echo.Context) bool {
-				return c.Path() == "/health" || c.Path() == "/metrics"
-			},
-		}
-		e.Use(echojwt.WithConfig(jwtConfig))
+		e.Use(jwtMiddleware(jwtSecret))
 
 		if err := utils.RegisterSSHHosts(cfg); err != nil {
 			zap.S().Fatalf("Failed to register SSH hosts: %v", err)
@@ -191,6 +182,7 @@ var serveCmd = &cobra.Command{
 			TeamDeployer:     teamDeployer,
 			ExpiryScheduler:  expirySched,
 			JobQueue:         jobQueue,
+			Version:          rootCmd.Version,
 		})
 		api.RegisterHandlers(e, srv)
 
@@ -278,6 +270,20 @@ func configureQueueless(cfg *config.Config, jobQueue *worker.Queue, expirySched 
 	expirySched.WithDirectTermination(challIdx, confProv, teamDeployer)
 	zap.S().Infof("Redis not configured, using direct goroutines for deployments (at most %d Ansible runs at a time for team requests and expiries)", limit)
 	return teamDeployer
+}
+
+// jwtMiddleware requires a valid HS256 token signed with secret on every
+// route but /health; handlers then check the claims' role.
+func jwtMiddleware(secret string) echo.MiddlewareFunc {
+	return echojwt.WithConfig(echojwt.Config{
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			return new(auth.Claims)
+		},
+		SigningKey: []byte(secret),
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/health"
+		},
+	})
 }
 
 // useMiddleware installs the request logger, panic recovery and CORS.

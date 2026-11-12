@@ -236,6 +236,25 @@ func (s *Server) TerminateAdminInstance(ctx echo.Context) error {
 	return ctx.NoContent(200)
 }
 
+// GetVersion reports the running Galvanize version, to admins only: the
+// project is open source, so a version tells anyone its known issues.
+// Requests without a valid token never get here (the JWT middleware rejects
+// them); player tokens are refused.
+func (s *Server) GetVersion(ctx echo.Context) error {
+	claims, err := auth.GetClaims(ctx)
+	if err != nil {
+		return ctx.JSON(401, api.Error{Message: utils.Ptr("Unauthorized")})
+	}
+	if claims.Role != "admin" {
+		return ctx.JSON(403, api.Error{Message: utils.Ptr("Forbidden - Admin access required")})
+	}
+	version := s.version
+	if version == "" {
+		version = "unknown"
+	}
+	return ctx.JSON(200, api.VersionResponse{Version: version})
+}
+
 func (s *Server) DeployAllAdminInstances(ctx echo.Context) error {
 	claims, err := auth.GetClaims(ctx)
 	if err != nil {
