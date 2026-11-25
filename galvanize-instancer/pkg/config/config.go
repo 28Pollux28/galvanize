@@ -61,6 +61,67 @@ type InstancerConfig struct {
 	NumWorkers                int                    `mapstructure:"num_workers,omitempty"`                 // Number of Ansible workers (default: 10)
 	Metrics                   MetricsConfig          `mapstructure:"metrics"`                               // Metrics endpoint configuration
 	DefaultResourceLimits     ResourceLimits         `mapstructure:"default_resource_limits"`               // Default container resource limits applied to all deployments
+	Repositories              RepositoriesConfig     `mapstructure:"repositories"`                          // Challenge repositories managed through the admin API
+	Build                     BuildConfig            `mapstructure:"build"`                                 // Image builds on the Ansible hosts
+}
+
+// RepositoriesConfig lists where challenge repositories may be cloned from.
+// Cloning is disabled while Sources is empty; repositories already in
+// challenge_dir can still be listed, updated and removed.
+type RepositoriesConfig struct {
+	Sources    []RepositorySource `mapstructure:"sources"`
+	GitTimeout time.Duration      `mapstructure:"git_timeout,omitempty"` // Time limit of one git command (default: 10m)
+}
+
+// RepositorySource allows clones of the repositories below URLPrefix, a URL
+// ending with "/" (same scheme, host and port, path inside its folder; see
+// Allows). Token, when
+// set, is sent as HTTP basic auth (Username, default "x-access-token") to
+// fetch private repositories; it is never written to the clone.
+type RepositorySource struct {
+	URLPrefix string `mapstructure:"url_prefix"`
+	Username  string `mapstructure:"username,omitempty"`
+	Token     string `mapstructure:"token,omitempty"`
+}
+
+// BuildConfig controls image builds, run with Docker on every Ansible host.
+type BuildConfig struct {
+	Concurrency int           `mapstructure:"concurrency,omitempty"` // Challenges built at the same time (default: 2)
+	Timeout     time.Duration `mapstructure:"timeout,omitempty"`     // Time limit of one challenge build (default: 30m)
+	// ProtectedImages are images challenges may never build (an image
+	// repository, any tag, or a prefix ending with "/"): the platform's own.
+	// Unset: Galvanize's defaults (traefik, mariadb, redis...); [] disables.
+	ProtectedImages []string `mapstructure:"protected_images"`
+}
+
+const (
+	DefaultGitTimeout       = 10 * time.Minute
+	DefaultBuildConcurrency = 2
+	DefaultBuildTimeout     = 30 * time.Minute
+)
+
+// GitTimeoutOrDefault returns git_timeout, or its default when unset.
+func (r RepositoriesConfig) GitTimeoutOrDefault() time.Duration {
+	if r.GitTimeout > 0 {
+		return r.GitTimeout
+	}
+	return DefaultGitTimeout
+}
+
+// ConcurrencyOrDefault returns build.concurrency, or its default when unset.
+func (b BuildConfig) ConcurrencyOrDefault() int {
+	if b.Concurrency > 0 {
+		return b.Concurrency
+	}
+	return DefaultBuildConcurrency
+}
+
+// TimeoutOrDefault returns build.timeout, or its default when unset.
+func (b BuildConfig) TimeoutOrDefault() time.Duration {
+	if b.Timeout > 0 {
+		return b.Timeout
+	}
+	return DefaultBuildTimeout
 }
 
 type RedisConfig struct {
@@ -133,6 +194,14 @@ func (ic InstancerConfig) RandomizedPortRange() (lo, hi int) {
 
 // Validate checks the instancer settings that have no safe fallback.
 func (ic InstancerConfig) Validate() error {
+	for i, src := range ic.Repositories.Sources {
+		if src.URLPrefix == "" {
+			return fmt.Errorf("repositories.sources[%d]: url_prefix is required", i)
+		}
+		if err := src.ValidatePrefix(); err != nil {
+			return fmt.Errorf("repositories.sources[%d]: url_prefix %w", i, err)
+		}
+	}
 	lo, hi := ic.RandomizedPortRange()
 	if lo < 1 || hi > 65535 || lo > hi {
 		return fmt.Errorf("invalid randomized port range %d-%d: randomized_port_min and randomized_port_max must be between 1 and 65535, the minimum not above the maximum (defaults: %d-%d)",
@@ -146,20 +215,24 @@ var (
 	mu      sync.RWMutex
 )
 
+// Load replaces the current config with the one of the global viper.
 func Load() error {
-	zap.S().Infof("Loading config from %s", viper.ConfigFileUsed())
-	mu.Lock()
-	defer mu.Unlock()
+	return load(viper.GetViper())
+}
 
+func load(v *viper.Viper) error {
+	zap.S().Infof("Loading config from %s", v.ConfigFileUsed())
 	cfg := &Config{}
-	if err := viper.Unmarshal(cfg); err != nil {
+	if err := v.Unmarshal(cfg); err != nil {
 		return err
 	}
 	if err := cfg.Instancer.Validate(); err != nil {
 		return fmt.Errorf("instancer: %w", err)
 	}
-	zap.S().Info("Config loaded successfully")
+	mu.Lock()
 	current = cfg
+	mu.Unlock()
+	zap.S().Info("Config loaded successfully")
 	return nil
 }
 
@@ -169,8 +242,17 @@ func Get() *Config {
 	return current
 }
 
-func Reload() error {
-	return Load()
+// Reload replaces the current config with the one v read from the changed
+// file. The file may have been read while it was being written (cp
+// truncates it first): a config without challenge_dir or ansible_dir, which
+// every config has, is refused and the current one kept.
+func Reload(v *viper.Viper) error {
+	for _, key := range []string{"instancer.challenge_dir", "instancer.ansible_dir"} {
+		if v.GetString(key) == "" {
+			return fmt.Errorf("%s is missing: the file is empty or incomplete, the current config is kept", key)
+		}
+	}
+	return load(v)
 }
 
 func LoadDefaults() error {

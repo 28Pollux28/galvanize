@@ -115,6 +115,7 @@ func (m *mockChallengeIndexer) GetAll() []*challenge.Challenge {
 
 func (m *mockChallengeIndexer) BuildIndex(_ string) error             { return nil }
 func (m *mockChallengeIndexer) Skipped() []challenge.SkippedChallenge { return nil }
+func (m *mockChallengeIndexer) Catalog() []*challenge.Challenge       { return nil }
 
 var _ challenge.ChallengeIndexer = (*mockChallengeIndexer)(nil)
 

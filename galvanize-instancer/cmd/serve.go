@@ -213,7 +213,9 @@ var serveCmd = &cobra.Command{
 			workerPool.Stop()
 		}
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		// The running operation is cancelled and stopped within
+		// shutdownTimeout (srv.Wait)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := e.Shutdown(shutdownCtx); err != nil {
 			zap.S().Fatalf("Failed to shutdown server: %v", err)
@@ -233,6 +235,11 @@ var serveCmd = &cobra.Command{
 		}
 	},
 }
+
+// shutdownTimeout bounds the shutdown: stop_grace_period is 1 min in the
+// compose files, after which Docker kills Galvanize. Stopping a cancelled
+// build or image action takes up to ansible.StopDuration, which must fit.
+const shutdownTimeout = 1 * time.Minute
 
 // metricsHandler wraps h with HTTP Basic Auth if a password is configured.
 // If password is empty the handler is returned as-is (no auth).
@@ -272,14 +279,16 @@ func configureQueueless(cfg *config.Config, jobQueue *worker.Queue, expirySched 
 	return teamDeployer
 }
 
-// jwtMiddleware requires a valid HS256 token signed with secret on every
-// route but /health; handlers then check the claims' role.
+// jwtMiddleware requires a valid HS256 token signed with secret, with an
+// expiry, on every route but /health; handlers then check the claims' role
+// (and scope). A token without exp would stay valid forever.
 func jwtMiddleware(secret string) echo.MiddlewareFunc {
+	key := []byte(secret)
 	return echojwt.WithConfig(echojwt.Config{
-		NewClaimsFunc: func(c echo.Context) jwt.Claims {
-			return new(auth.Claims)
+		ParseTokenFunc: func(c echo.Context, raw string) (interface{}, error) {
+			return jwt.ParseWithClaims(raw, new(auth.Claims), func(*jwt.Token) (interface{}, error) { return key, nil },
+				jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 		},
-		SigningKey: []byte(secret),
 		Skipper: func(c echo.Context) bool {
 			return c.Path() == "/health"
 		},

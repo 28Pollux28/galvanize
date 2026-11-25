@@ -27,7 +27,10 @@ func newAPI(version string) *echo.Echo {
 
 func signed(t *testing.T, method jwt.SigningMethod, key interface{}, role string, expires time.Time) string {
 	t.Helper()
-	claims := &auth.Claims{Role: role, TeamID: "team1", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expires)}}
+	claims := &auth.Claims{Role: role, TeamID: "team1"}
+	if !expires.IsZero() {
+		claims.ExpiresAt = jwt.NewNumericDate(expires)
+	}
 	token, err := jwt.NewWithClaims(method, claims).SignedString(key)
 	require.NoError(t, err)
 	return token
@@ -59,6 +62,7 @@ func TestVersion_OnlyForAdmins(t *testing.T) {
 		"wrong key":       {signed(t, jwt.SigningMethodHS256, []byte("another-secret"), "admin", hour), http.StatusUnauthorized},
 		"unsigned (none)": {signed(t, jwt.SigningMethodNone, jwt.UnsafeAllowNoneSignatureType, "admin", hour), http.StatusUnauthorized},
 		"expired admin":   {signed(t, jwt.SigningMethodHS256, []byte(testSecret), "admin", time.Now().Add(-time.Minute)), http.StatusUnauthorized},
+		"admin, no exp":   {signed(t, jwt.SigningMethodHS256, []byte(testSecret), "admin", time.Time{}), http.StatusUnauthorized},
 		"player":          {signed(t, jwt.SigningMethodHS256, []byte(testSecret), "player", hour), http.StatusForbidden},
 		"no role":         {signed(t, jwt.SigningMethodHS256, []byte(testSecret), "", hour), http.StatusForbidden},
 	} {

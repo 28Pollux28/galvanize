@@ -2,6 +2,26 @@
 
 ## vX.X.X (YYYY-MM-DD)
 
+### Added
+- Challenge repository management through the admin API: list, clone (only from the URL prefixes of the new `repositories.sources`, with optional per-source tokens kept out of the clones), update (fetch and reset to the followed branch or tag, naming the local changes it discards; a clone or update the server answers with a credentials prompt fails with "the repository does not exist, or it is private and its source in repositories.sources has no token able to read it" instead of git's askpass message) and remove (refused while instances of its challenges exist) the top-level folders of `challenge_dir`, reloading the challenge index afterwards (an update builds nothing: builds are explicit)
+- `GET /admin/challenges` lists every challenge definition, whatever its type, with its full content, its repository's `commit`, its build plan (`build.buildable`, `build.refused`), its declared `files` resolved in the challenge folder then its `files/` subfolder (`{declared, path, size, error}`; Git LFS pointers are errors) and the definitions that could not be read (404 for an unknown `repo`); `GET /admin/challenges/file` serves the files of challenge folders (or their SHA-1), refusing `.git` and paths leading outside the challenge folder. A CTF platform can import challenges without access to the server
+- `POST /admin/build` builds challenge images on every Ansible host (BuildKit, Docker Compose), `POST /admin/images` checks or removes them (state of each image per host; `unreachable` or `error` on a host the check could not run on, never left out); settings in the new `build` section. Challenges are named by their definition path (`{path}`, or `{category, name}`) in requests, and by definition path in results (`built`, `failed` with refused builds, `skipped`; `challenges` of an image action)
+- Long admin actions run as background operations, one at a time, with their log: `GET /admin/operations`, `GET /admin/operations/{id}`, `POST /admin/operations/{id}/cancel` (409 for a finished operation); an operation is reported finished once the next one can start. A cancelled build or image action stops ansible-playbook (SIGTERM, which stops its workers; 15 s later, every local process of the run is killed, on Linux), then what it started on the hosts (processes marked with the run's `GALVANIZE_RUN_ID`, build folder), within 55 s, before the operation ends and the next one can start; a cancelled run is reported cancelled even when ansible-playbook exited 0, and a panic in a build fails that build only
+- The Docker image includes git
+
+### Changed
+- A Compose service with a `build` section but no `image` is deployed as `galvanize/<category>-<challenge>-<service>-<hash>:latest`, the name the build gives it: such services could not be deployed before (the build context does not exist on the host)
+- Hidden folders of `challenge_dir` (`.github`, temporary clones...) are no longer indexed: a challenge in a folder whose name starts with `.` disappears from the index
+- A challenge deployed from `deploy_parameters.image` without a Dockerfile in its folder is taken to use an image from a registry: building it does nothing (ctfd-management's `challenges.sh` failed its build)
+- Every JWT must have an expiry (`exp`); repository, build, image, challenge-file and operation endpoints also need the `manage` scope
+- `deploy_parameters.compose_file`, and an auto-detected Compose file, must stay inside the challenge folder (symlinks included), also next to an inline `compose_definition`; otherwise the definition is skipped
+- `build.protected_images` defaults no longer include `ctfd/ctfd`: list the CTF platform's images in the setting
+- A challenge definition JSON cannot encode (`.nan`, keys that are not strings once converted) is skipped instead of breaking `GET /admin/challenges`
+
+### Fixed
+- Ansible's SSH control socket was shared by all the hosts of a run (`%%h` reaches ssh as a literal `%h`), so with several hosts a task could run on the wrong one
+- A config file changed in several writes (`cp` truncates it first) could be reloaded half written, leaving Galvanize with an empty config until a restart: the change is now applied once the file has not changed for 500 ms, and a reloaded config without `challenge_dir` or `ansible_dir` is refused (the current one is kept)
+
 ## v0.7.5 (2026-11-11)
 
 ### Added

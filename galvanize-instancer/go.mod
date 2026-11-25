@@ -11,6 +11,7 @@ require (
 	github.com/labstack/echo-contrib v0.17.4
 	github.com/labstack/echo-jwt/v4 v4.4.0
 	github.com/labstack/echo/v4 v4.15.0
+	github.com/oapi-codegen/runtime v1.1.2
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.17.3
@@ -24,6 +25,7 @@ require (
 )
 
 require (
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/apenella/go-common-utils/data v0.0.0-20220913191136-86daaa87e7df // indirect
 	github.com/apenella/go-common-utils/error v0.0.0-20220913191136-86daaa87e7df // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
