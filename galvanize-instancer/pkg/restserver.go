@@ -10,7 +10,9 @@ import (
 
 	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/internal/auth"
+	"github.com/28Pollux28/galvanize/internal/build"
 	"github.com/28Pollux28/galvanize/internal/challenge"
+	"github.com/28Pollux28/galvanize/internal/operation"
 	"github.com/28Pollux28/galvanize/pkg/api"
 	"github.com/28Pollux28/galvanize/pkg/config"
 	pkgmetrics "github.com/28Pollux28/galvanize/pkg/metrics"
@@ -36,6 +38,13 @@ type Server struct {
 	wg           sync.WaitGroup
 	jobQueue     *worker.Queue // Redis job queue (optional, nil means use direct goroutines)
 	version      string        // reported to admins only
+	operations   *operation.Manager
+	builder      *build.Builder
+	gitBinary    string
+	// buildCat is the build catalog of the current challenge index (see
+	// buildCatalog)
+	buildCatMu sync.Mutex
+	buildCat   *build.Catalog
 }
 
 // ServerOpts holds the dependencies needed to construct a Server.
@@ -53,6 +62,12 @@ type ServerOpts struct {
 	JobQueue        *worker.Queue // Optional: if provided, jobs are queued to Redis
 	// Version of the running Galvanize, reported to admins only
 	Version string
+	// Operations runs repository, build and image operations (default: a new manager)
+	Operations *operation.Manager
+	// UtilityRunner runs the build and image playbooks (default: Ansible)
+	UtilityRunner ansible.UtilityRunner
+	// GitBinary is the git executable (default: "git" from PATH)
+	GitBinary string
 }
 
 var _ api.ServerInterface = (*Server)(nil)
@@ -73,7 +88,18 @@ func NewServerWithOpts(opts ServerOpts) *Server {
 	if teamDeployer == nil {
 		teamDeployer = deployer
 	}
+	ops := opts.Operations
+	if ops == nil {
+		ops = operation.NewManager()
+	}
+	runner := opts.UtilityRunner
+	if runner == nil {
+		runner = ansible.AnsibleUtilityRunner{}
+	}
 	return &Server{
+		operations:   ops,
+		builder:      &build.Builder{Runner: runner},
+		gitBinary:    opts.GitBinary,
 		db:           opts.DB,
 		challIdx:     opts.ChallengeIndexer,
 		confProv:     opts.ConfigProvider,
@@ -98,6 +124,9 @@ func (s *Server) StartScheduler(ctx context.Context, sched *scheduler.ExpirySche
 
 // Wait blocks until all background goroutines have completed.
 func (s *Server) Wait(ctx context.Context) error {
+	if err := s.operations.Shutdown(ctx); err != nil {
+		return err
+	}
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()

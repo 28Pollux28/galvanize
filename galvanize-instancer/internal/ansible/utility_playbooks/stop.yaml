@@ -1,0 +1,11 @@
+---
+# Internal playbook of Galvanize (embedded in the binary): stops on every
+# host what a cancelled or timed out run of another utility playbook left
+# running there (see stopScript). Unlike the other playbooks, it does not
+# set GALVANIZE_RUN_ID.
+- hosts: all
+  gather_facts: false
+  tasks:
+    - name: Stop run
+      ansible.builtin.command:
+        argv: ["sh", "-c", "{{ stop_script }}", "sh", "{{ stop_run_id }}"]

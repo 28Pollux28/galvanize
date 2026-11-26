@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -15,10 +16,18 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/labstack/echo/v4"
+	"github.com/oapi-codegen/runtime"
 )
 
 const (
 	BearerAuthScopes = "bearerAuth.Scopes"
+)
+
+// Defines values for BuildPlanKind.
+const (
+	Compose BuildPlanKind = "compose"
+	Image   BuildPlanKind = "image"
+	None    BuildPlanKind = "none"
 )
 
 // Defines values for DeploymentInfoStatus.
@@ -32,6 +41,39 @@ const (
 const (
 	ErrorDeploymentInfoPreviousStatusStarting ErrorDeploymentInfoPreviousStatus = "starting"
 	ErrorDeploymentInfoPreviousStatusStopping ErrorDeploymentInfoPreviousStatus = "stopping"
+)
+
+// Defines values for ImagesRequestAction.
+const (
+	ImagesRequestActionRemove ImagesRequestAction = "remove"
+	ImagesRequestActionStatus ImagesRequestAction = "status"
+)
+
+// Defines values for OperationKind.
+const (
+	OperationKindBuild  OperationKind = "build"
+	OperationKindClone  OperationKind = "clone"
+	OperationKindImages OperationKind = "images"
+	OperationKindPull   OperationKind = "pull"
+	OperationKindRemove OperationKind = "remove"
+)
+
+// Defines values for OperationStatus.
+const (
+	OperationStatusCancelled OperationStatus = "cancelled"
+	OperationStatusFailed    OperationStatus = "failed"
+	OperationStatusRunning   OperationStatus = "running"
+	OperationStatusSuccess   OperationStatus = "success"
+	OperationStatusWarning   OperationStatus = "warning"
+)
+
+// Defines values for OperationLineLevel.
+const (
+	OperationLineLevelDebug   OperationLineLevel = "debug"
+	OperationLineLevelError   OperationLineLevel = "error"
+	OperationLineLevelInfo    OperationLineLevel = "info"
+	OperationLineLevelSuccess OperationLineLevel = "success"
+	OperationLineLevelWarning OperationLineLevel = "warning"
 )
 
 // Defines values for RetryDeploymentRequestAction.
@@ -58,6 +100,30 @@ type AdminDeployRequest struct {
 	ChallengeName string `json:"challenge_name"`
 }
 
+// BuildPlan defines model for BuildPlan.
+type BuildPlan struct {
+	// Buildable A build of this challenge builds something (it is deployable, and kind is image or compose)
+	Buildable bool          `json:"buildable"`
+	Images    []string      `json:"images"`
+	Kind      BuildPlanKind `json:"kind"`
+
+	// Reason Why there is nothing to build, or why the build is refused
+	Reason *string `json:"reason,omitempty"`
+
+	// Refused There is something to build, but the challenge may not build it (unsafe build section, invalid name, image used by another challenge folder or by the platform, compose file and deployment disagreeing on an image)
+	Refused *bool `json:"refused,omitempty"`
+}
+
+// BuildPlanKind defines model for BuildPlan.Kind.
+type BuildPlanKind string
+
+// BuildRequest The challenges to work on, by repository or by name (both may be given; neither means every challenge)
+type BuildRequest struct {
+	Challenges *[]ChallengeRef `json:"challenges,omitempty"`
+	NoCache    *bool           `json:"no_cache,omitempty"`
+	Repo       *string         `json:"repo,omitempty"`
+}
+
 // BulkOperationResponse defines model for BulkOperationResponse.
 type BulkOperationResponse struct {
 	Challenges      []ChallengeCategoryResponse `json:"challenges"`
@@ -69,6 +135,75 @@ type BulkOperationResponse struct {
 type ChallengeCategoryResponse struct {
 	Category      string `json:"category"`
 	ChallengeName string `json:"challenge_name"`
+}
+
+// ChallengeDefinition defines model for ChallengeDefinition.
+type ChallengeDefinition struct {
+	Build    BuildPlan `json:"build"`
+	Category string    `json:"category"`
+
+	// Commit Current commit of the repository (abbreviated), when it is a git clone
+	Commit *string `json:"commit,omitempty"`
+
+	// Definition The whole definition file as parsed
+	Definition map[string]interface{} `json:"definition"`
+
+	// Deployable The challenge can be deployed (type zync, in the deployment index)
+	Deployable bool `json:"deployable"`
+
+	// Dir Challenge folder, relative to challenge_dir
+	Dir   string          `json:"dir"`
+	Files []ChallengeFile `json:"files"`
+	Name  string          `json:"name"`
+
+	// Path Definition file, relative to challenge_dir
+	Path         string  `json:"path"`
+	PlaybookName *string `json:"playbook_name,omitempty"`
+
+	// Repository Repository folder, empty for a challenge directly in challenge_dir
+	Repository string `json:"repository"`
+	Type       string `json:"type"`
+}
+
+// ChallengeDefinitionList defines model for ChallengeDefinitionList.
+type ChallengeDefinitionList struct {
+	Challenges []ChallengeDefinition `json:"challenges"`
+	Skipped    []SkippedChallenge    `json:"skipped"`
+}
+
+// ChallengeFile A file of the definition's files list, looked up in the challenge folder, then in its files/ subfolder. Absolute paths, paths leaving the challenge folder (symlinks included) or going through .git, and Git LFS pointers are errors.
+type ChallengeFile struct {
+	// Declared The path as written in the definition
+	Declared string `json:"declared"`
+
+	// Error Why the file cannot be served
+	Error *string `json:"error,omitempty"`
+
+	// Path The file found, relative to challenge_dir (to download with /admin/challenges/file)
+	Path *string `json:"path,omitempty"`
+	Size *int64  `json:"size,omitempty"`
+}
+
+// ChallengeRef A deployable challenge, by definition file (path) or by category and name
+type ChallengeRef struct {
+	Category *string `json:"category,omitempty"`
+	Name     *string `json:"name,omitempty"`
+
+	// Path Definition file, relative to challenge_dir (as ChallengeDefinition.path)
+	Path *string `json:"path,omitempty"`
+}
+
+// CloneRepositoryRequest defines model for CloneRepositoryRequest.
+type CloneRepositoryRequest struct {
+	// Force Replace an existing folder of that name
+	Force *bool `json:"force,omitempty"`
+
+	// Name Folder name (default from the URL)
+	Name *string `json:"name,omitempty"`
+
+	// Ref Branch or tag (default branch of the remote)
+	Ref *string `json:"ref,omitempty"`
+	Url string  `json:"url"`
 }
 
 // DeployRequest defines model for DeployRequest.
@@ -132,6 +267,51 @@ type ErrorDeploymentInfo struct {
 // ErrorDeploymentInfoPreviousStatus The status before the deployment transitioned to error. Indicates whether a deploy or terminate action was in progress.
 type ErrorDeploymentInfoPreviousStatus string
 
+// FileChecksum defines model for FileChecksum.
+type FileChecksum struct {
+	Sha1 string `json:"sha1"`
+	Size int64  `json:"size"`
+}
+
+// ImagesRequest defines model for ImagesRequest.
+type ImagesRequest struct {
+	Action     ImagesRequestAction `json:"action"`
+	Challenges *[]ChallengeRef     `json:"challenges,omitempty"`
+	Repo       *string             `json:"repo,omitempty"`
+}
+
+// ImagesRequestAction defines model for ImagesRequest.Action.
+type ImagesRequestAction string
+
+// Operation defines model for Operation.
+type Operation struct {
+	CreatedAt  time.Time               `json:"created_at"`
+	FinishedAt *time.Time              `json:"finished_at,omitempty"`
+	Id         string                  `json:"id"`
+	Kind       OperationKind           `json:"kind"`
+	LineCount  int                     `json:"line_count"`
+	Lines      []OperationLine         `json:"lines"`
+	Result     *map[string]interface{} `json:"result,omitempty"`
+	Status     OperationStatus         `json:"status"`
+	Target     string                  `json:"target"`
+}
+
+// OperationKind defines model for Operation.Kind.
+type OperationKind string
+
+// OperationStatus defines model for Operation.Status.
+type OperationStatus string
+
+// OperationLine defines model for OperationLine.
+type OperationLine struct {
+	Level   OperationLineLevel `json:"level"`
+	Message string             `json:"message"`
+	Time    time.Time          `json:"time"`
+}
+
+// OperationLineLevel defines model for OperationLine.Level.
+type OperationLineLevel string
+
 // ReloadChallengesResponse defines model for ReloadChallengesResponse.
 type ReloadChallengesResponse struct {
 	// Indexed Number of challenges in the index after the reload.
@@ -139,6 +319,37 @@ type ReloadChallengesResponse struct {
 
 	// Skipped Challenge files left out of the index.
 	Skipped []SkippedChallenge `json:"skipped"`
+}
+
+// Repository defines model for Repository.
+type Repository struct {
+	// Branch Current branch, empty when HEAD is detached (tag)
+	Branch *string `json:"branch,omitempty"`
+
+	// Challenges Challenge definitions in the folder
+	Challenges    int        `json:"challenges"`
+	Commit        *string    `json:"commit,omitempty"`
+	CommitMessage *string    `json:"commit_message,omitempty"`
+	CommitTime    *time.Time `json:"commit_time,omitempty"`
+
+	// Dirty Tracked files differ from the commit
+	Dirty *bool   `json:"dirty,omitempty"`
+	Error *string `json:"error,omitempty"`
+	IsGit bool    `json:"is_git"`
+	Name  string  `json:"name"`
+
+	// Ref Branch or tag the repository follows on update
+	Ref *string `json:"ref,omitempty"`
+
+	// Remote Remote URL, without credentials
+	Remote *string `json:"remote,omitempty"`
+}
+
+// RepositoryList defines model for RepositoryList.
+type RepositoryList struct {
+	// CloneSources URL prefixes clones are allowed from (empty means cloning is disabled)
+	CloneSources []string     `json:"clone_sources"`
+	Repositories []Repository `json:"repositories"`
 }
 
 // RetryDeploymentRequest defines model for RetryDeploymentRequest.
@@ -195,8 +406,38 @@ type VersionResponse struct {
 	Version string `json:"version"`
 }
 
+// ListChallengeDefinitionsParams defines parameters for ListChallengeDefinitions.
+type ListChallengeDefinitionsParams struct {
+	// Repo Only the challenges of this repository
+	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
+}
+
+// GetChallengeFileParams defines parameters for GetChallengeFile.
+type GetChallengeFileParams struct {
+	// Path Path relative to challenge_dir
+	Path string `form:"path" json:"path"`
+
+	// Checksum Return the file's SHA-1 and size (JSON) instead of its content
+	Checksum *bool `form:"checksum,omitempty" json:"checksum,omitempty"`
+}
+
+// GetOperationParams defines parameters for GetOperation.
+type GetOperationParams struct {
+	// Offset Return the log lines from this index on
+	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// BuildChallengesJSONRequestBody defines body for BuildChallenges for application/json ContentType.
+type BuildChallengesJSONRequestBody = BuildRequest
+
 // DeployAdminInstanceJSONRequestBody defines body for DeployAdminInstance for application/json ContentType.
 type DeployAdminInstanceJSONRequestBody = AdminDeployRequest
+
+// ManageImagesJSONRequestBody defines body for ManageImages for application/json ContentType.
+type ManageImagesJSONRequestBody = ImagesRequest
+
+// CloneRepositoryJSONRequestBody defines body for CloneRepository for application/json ContentType.
+type CloneRepositoryJSONRequestBody = CloneRepositoryRequest
 
 // RetryDeploymentJSONRequestBody defines body for RetryDeployment for application/json ContentType.
 type RetryDeploymentJSONRequestBody = RetryDeploymentRequest
@@ -212,6 +453,15 @@ type TerminateInstanceJSONRequestBody = DeployRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Build challenge images (admin only)
+	// (POST /admin/build)
+	BuildChallenges(ctx echo.Context) error
+	// List challenge definitions (admin only)
+	// (GET /admin/challenges)
+	ListChallengeDefinitions(ctx echo.Context, params ListChallengeDefinitionsParams) error
+	// Download a file of a challenge (admin only)
+	// (GET /admin/challenges/file)
+	GetChallengeFile(ctx echo.Context, params GetChallengeFileParams) error
 	// Check communication with Zync
 	// (POST /admin/config-check)
 	ConfigCheck(ctx echo.Context) error
@@ -224,12 +474,36 @@ type ServerInterface interface {
 	// List all deployments in error status (admin only)
 	// (GET /admin/error-deployments)
 	ListErrorDeployments(ctx echo.Context) error
+	// Check or remove challenge images (admin only)
+	// (POST /admin/images)
+	ManageImages(ctx echo.Context) error
 	// List all unique challenges
 	// (GET /admin/list-unique-challs)
 	ListUniqueChallenges(ctx echo.Context) error
+	// List recent operations (admin only)
+	// (GET /admin/operations)
+	ListOperations(ctx echo.Context) error
+	// Get an operation and its log (admin only)
+	// (GET /admin/operations/{id})
+	GetOperation(ctx echo.Context, id string, params GetOperationParams) error
+	// Cancel a running operation (admin only)
+	// (POST /admin/operations/{id}/cancel)
+	CancelOperation(ctx echo.Context, id string) error
 	// Reload challenges index
 	// (POST /admin/reload-challs)
 	ReloadChallenges(ctx echo.Context) error
+	// List challenge repositories (admin only)
+	// (GET /admin/repos)
+	ListRepositories(ctx echo.Context) error
+	// Clone a challenge repository (admin only)
+	// (POST /admin/repos)
+	CloneRepository(ctx echo.Context) error
+	// Remove a challenge repository (admin only)
+	// (DELETE /admin/repos/{name})
+	RemoveRepository(ctx echo.Context, name string) error
+	// Update a challenge repository (admin only)
+	// (POST /admin/repos/{name}/pull)
+	PullRepository(ctx echo.Context, name string) error
 	// Retry a failed deployment (admin only)
 	// (POST /admin/retry-deployment)
 	RetryDeployment(ctx echo.Context) error
@@ -265,6 +539,64 @@ type ServerInterface interface {
 // ServerInterfaceWrapper converts echo contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler ServerInterface
+}
+
+// BuildChallenges converts echo context to params.
+func (w *ServerInterfaceWrapper) BuildChallenges(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.BuildChallenges(ctx)
+	return err
+}
+
+// ListChallengeDefinitions converts echo context to params.
+func (w *ServerInterfaceWrapper) ListChallengeDefinitions(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListChallengeDefinitionsParams
+	// ------------- Optional query parameter "repo" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "repo", ctx.QueryParams(), &params.Repo)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter repo: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListChallengeDefinitions(ctx, params)
+	return err
+}
+
+// GetChallengeFile converts echo context to params.
+func (w *ServerInterfaceWrapper) GetChallengeFile(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetChallengeFileParams
+	// ------------- Required query parameter "path" -------------
+
+	err = runtime.BindQueryParameter("form", true, true, "path", ctx.QueryParams(), &params.Path)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter path: %s", err))
+	}
+
+	// ------------- Optional query parameter "checksum" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "checksum", ctx.QueryParams(), &params.Checksum)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter checksum: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetChallengeFile(ctx, params)
+	return err
 }
 
 // ConfigCheck converts echo context to params.
@@ -311,6 +643,17 @@ func (w *ServerInterfaceWrapper) ListErrorDeployments(ctx echo.Context) error {
 	return err
 }
 
+// ManageImages converts echo context to params.
+func (w *ServerInterfaceWrapper) ManageImages(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ManageImages(ctx)
+	return err
+}
+
 // ListUniqueChallenges converts echo context to params.
 func (w *ServerInterfaceWrapper) ListUniqueChallenges(ctx echo.Context) error {
 	var err error
@@ -322,6 +665,62 @@ func (w *ServerInterfaceWrapper) ListUniqueChallenges(ctx echo.Context) error {
 	return err
 }
 
+// ListOperations converts echo context to params.
+func (w *ServerInterfaceWrapper) ListOperations(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListOperations(ctx)
+	return err
+}
+
+// GetOperation converts echo context to params.
+func (w *ServerInterfaceWrapper) GetOperation(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", ctx.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
+	}
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOperationParams
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", ctx.QueryParams(), &params.Offset)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter offset: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetOperation(ctx, id, params)
+	return err
+}
+
+// CancelOperation converts echo context to params.
+func (w *ServerInterfaceWrapper) CancelOperation(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", ctx.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter id: %s", err))
+	}
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CancelOperation(ctx, id)
+	return err
+}
+
 // ReloadChallenges converts echo context to params.
 func (w *ServerInterfaceWrapper) ReloadChallenges(ctx echo.Context) error {
 	var err error
@@ -330,6 +729,64 @@ func (w *ServerInterfaceWrapper) ReloadChallenges(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ReloadChallenges(ctx)
+	return err
+}
+
+// ListRepositories converts echo context to params.
+func (w *ServerInterfaceWrapper) ListRepositories(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListRepositories(ctx)
+	return err
+}
+
+// CloneRepository converts echo context to params.
+func (w *ServerInterfaceWrapper) CloneRepository(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CloneRepository(ctx)
+	return err
+}
+
+// RemoveRepository converts echo context to params.
+func (w *ServerInterfaceWrapper) RemoveRepository(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", ctx.Param("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter name: %s", err))
+	}
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RemoveRepository(ctx, name)
+	return err
+}
+
+// PullRepository converts echo context to params.
+func (w *ServerInterfaceWrapper) PullRepository(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", ctx.Param("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter name: %s", err))
+	}
+
+	ctx.Set(BearerAuthScopes, []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.PullRepository(ctx, name)
 	return err
 }
 
@@ -469,12 +926,23 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 		Handler: si,
 	}
 
+	router.POST(baseURL+"/admin/build", wrapper.BuildChallenges)
+	router.GET(baseURL+"/admin/challenges", wrapper.ListChallengeDefinitions)
+	router.GET(baseURL+"/admin/challenges/file", wrapper.GetChallengeFile)
 	router.POST(baseURL+"/admin/config-check", wrapper.ConfigCheck)
 	router.POST(baseURL+"/admin/deploy", wrapper.DeployAdminInstance)
 	router.POST(baseURL+"/admin/deploy-all", wrapper.DeployAllAdminInstances)
 	router.GET(baseURL+"/admin/error-deployments", wrapper.ListErrorDeployments)
+	router.POST(baseURL+"/admin/images", wrapper.ManageImages)
 	router.GET(baseURL+"/admin/list-unique-challs", wrapper.ListUniqueChallenges)
+	router.GET(baseURL+"/admin/operations", wrapper.ListOperations)
+	router.GET(baseURL+"/admin/operations/:id", wrapper.GetOperation)
+	router.POST(baseURL+"/admin/operations/:id/cancel", wrapper.CancelOperation)
 	router.POST(baseURL+"/admin/reload-challs", wrapper.ReloadChallenges)
+	router.GET(baseURL+"/admin/repos", wrapper.ListRepositories)
+	router.POST(baseURL+"/admin/repos", wrapper.CloneRepository)
+	router.DELETE(baseURL+"/admin/repos/:name", wrapper.RemoveRepository)
+	router.POST(baseURL+"/admin/repos/:name/pull", wrapper.PullRepository)
 	router.POST(baseURL+"/admin/retry-deployment", wrapper.RetryDeployment)
 	router.GET(baseURL+"/admin/team-deployments", wrapper.ListTeamDeployments)
 	router.POST(baseURL+"/admin/terminate", wrapper.TerminateAdminInstance)
@@ -491,47 +959,93 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xabW8UORL+K6W+kwCpMwkL6HS5TywBLqfT3grCIR2gyGlXp73pthvbHZhF899PLrvf",
-	"3ZMJm2Rhtd+mp8t2ueqpFz/uL0mmqlpJlNYkh18SkxVYMfr5lFdCHmFdqvUr/Nigse7fWqsatRVIMhmz",
-	"eK702v3maDItaiuUTA6TkwKhfQsqB+ueC1aWKM8RrAJOM6+SNLHrGpPDxFgt5HmySZNO7lSyCuNzuzfX",
-	"m3eTJho/NkIjTw7f9arP1vvQDVVnv2BmnUo/NuXFf2rUzKnwCk2tpMGIPdqZ6ElYrOjHXzXmyWHyl/3e",
-	"2PvB0vvP2iHPgkLd7JtOD6Y1W48sY04z1UjySJAR0uI5aidVoTHsHAcvF2zQCkYmHv4Vtciy3ltRsoOz",
-	"b9Jvf+J3aIcKpT2WubppF6VJpqTEzO3vVIQFZjJ+Z8hPeePj6NRgpiQ3cwsdBQkQEoIQGCEzBN5tBIxl",
-	"2iIfmGoQA91iNCzuAysqJAcMJv3EDGQaWZg4V7piNjlMOLO45wbEHI6fa6HRnDI7X+htgXK6SJBfwU9N",
-	"WUKuNDRSfGyGMmb31Y1ltiEjomwqhw2yjHubJrqR0v8yVtW1+/nh66HVLTYz8Db3xgD5XGul5zjcmrri",
-	"k9w6tD0adnbu1yHI7eR0sPs5WkkEggjkWlW0cs5EiXygQDQlCR6fdKD38VE8kmqNl0I15rTH2Xwe/w7O",
-	"MFd6FlNWM2mEk0buUhztZAXHkgvnHAOfCrQFamBhFCgNFnUlJLMIjPIK2VVIqLU612goPiJ434LyNLHI",
-	"qtMlU7iXIDhKK3KBegXPq9quwY8eBOk+c43RNFRnazU1vzZsSmYshIG7YmcSu4InaQ/5SAC3Npg7dorC",
-	"EfRHG4oF9CssFeNdV2CW2wEhOX7GiBd+aqoz1K4qdlqTy52laBCw3KKmZ03LxRFrLkRdxxbotINclGig",
-	"xNyCamxbiGkRN+dOndtrv0w36bxhm/ombLzXMG5Iq9d9UlvsXXxYxLHs37lYq1E7FMEe3PNgu+f+1W6N",
-	"AfpSuNfFGwl0T/Eck7rZSgzCGit1OYv6LkNxZtkZM7iC4xyksi6ELwVHnoLtdf0kyhLOnA9y1Bp5P77F",
-	"aZtk7seShJLl+sEwJ3ghAnyQoRrllI7mhl7zxQxxfNQCZZjcgjVjUJz4f7xEzPczSM28XjNbzLX7mdli",
-	"3k06kEdzk0ZmYtB5W6xB+FQUEHp1H0oKdVNGN0Vu23I82KF3pI7JdxWUBg+/7NyaWZRmOG7iV9cDth0L",
-	"IMsK6IYA49zAfVydr1J4nzw6qN4n7sfD4n3yYLV1NXPqcsu2FNeL+jTkCowthBlWcth7CCKHRpaiEout",
-	"7rz/izR96bBIUp6PRoEvcdGKRRWaNBQG2LxjdfEo1bD9OFOqRCbjvdsJsqrPclvg0a+w+6F60hNGTtJ3",
-	"1wpM4qWvv8ONxeLmv6jNVrbh0gvM9xBGthkhwAFesvKSSfErekzDwepvq0cPrla5XWeupEMfZo0Wdv3a",
-	"md7rdYZMo37a2KJ/etFG67/enjgwknRyGN72KhTW1snGTdzmgvHWnv58TA7wxnO7enbyYtgvNMb9+VQa",
-	"cVZSRhC2dBP3mz+WxjKZ0aqdCRNnjCfO7KpGyWqRHCaPVgerR0lKKY425v29nymZi/O9rMDsgryifH1W",
-	"LUF0zF2zQVLPSMjZ03uR5vnh4CDSnKiqaqTriH05tAX8by0zME2WoTF5UzrtHh88nA99I1ljC6XFr8i9",
-	"0KO50AulzwTnKGEPiNsDRhND5+pNmjyJaXYsLWrJSjCoL1H7/n3k/OTw3djt7z5sPqSJaaqKuZNXQmaA",
-	"LL5FmirYNpTtRav6yCb9Wz8mHq1o7I+Kr0NFsejZMVbXZVhw/5dQ9HyWuCqHRPjPzTgyrG5wM3PtDxE6",
-	"o0+SQVOyfW1bd0WNfslKwSGsDfvwRl5I9UlC38UeH90BJB4f/H3rjlipkfE14GdhrBmA6Ea88DxgbZNO",
-	"NLgBUPpN9LWs75zu+8ROTeUcnXusLK9EaFmOQGqSOFBuxEhxdjpiNCcYodC+48TS+rAsZ140i26kdfYm",
-	"jcU5Rvq1l2hp7oGsz1vhLEIzpSBkVjbcFZ4RS+OcPgbHv4WxE9bKLFSHnZGxU0cUo8rm59UZYJy+1K3S",
-	"toYWuzPIfPNphGw0BYmQwWbtoXUBiqUwds8jd4+QO8TiHDtvSLJnWe4EO9e4olpG0Cw6v+Ok03k8sqne",
-	"tZ6iGni1rRdjfTxxNqa8HNdF/AcX5gKY5IEVDCxVhZW7lvJ0FUxZLVswCxmTUllHqNRMG8e10PmSWeCN",
-	"BwQCk4oOdd3S90x357UvWYUpMI0tFUBqOLgib0m5Fnr/oKfJZIYGB86LuJ8xO8GFxsy6ffS6amSBFcoa",
-	"rVHaYAth4AJrSyo8OThwzxpto6U/E4/jZMpE/tYY2RYai6xnJBKCo/8Q/fwCaMfwt3o9KLLbIsCxkWzE",
-	"qjmkilkaXcHrGjORr1vWkJme11R6yGLGcDEiVm/p2LBA337t0cHbZsup4bbLoz+FtAqMmgAicyceupMD",
-	"yePb3/jReJe5auR31ZS0MTWj7hc7EYusupGeuCUa0454InR4IjKFc60aV07O1p5no6ED/VoyNto7T1jD",
-	"O2l/lpjKazQ/Q1PVqGnjf3bQ2zvoKU6Wcdve7yweyU9akW+ZN4oU6lZvV+nutG0IKXZyd6FG13uTjHjj",
-	"oDjpPwDYnaDpwLCdo+kBcTVNc/A70TR26PzvnqcZePNaVM3gjiNajF7RMcDQmeHyimuPFOjaw10fELNu",
-	"FRCHH7pNajid25h1dwcrbyRDOqVglBeTKOicU5dsjdqApNsgZ36Uls5VHLJSUAorkWkJnwqRFa1yKZ1h",
-	"jAr/ekZXGNOgScctcMHMvId9iTZc7twmUKc3TxGI9tcprYduG5vXQVtEOwep3S4Xbrk+/IGuFHa7GBh8",
-	"tEX2KNHid3lN0Jcf0UKEYEVX+XwZVs/p/QhWtxS4k08tYuea7lMHUgqHfES5XoTOM0/R+EGj04T7O2Ta",
-	"FKxSgEy7fFmxz8NvHDSyrHA0FNps9eAaGLuqEbnNouUd57/4ae2m8lGa9ggokJW2GBSpWdb+p5f4jb4f",
-	"3//3H35c+a3sHAivUV+KDF3N89qvp7YZmcLr7+ul33O/+tKeW8S/br8v/B1x7yXoUy2Bl8hvB4HffC5z",
-	"Z/fx/R9xNs6f1zlHfXsl8uZPT3dxrolWlM3m/wMAd0nbbZY1AAA=",
+	"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",
+	"//7/AgAA//+WtlprNXQAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

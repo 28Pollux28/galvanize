@@ -119,9 +119,7 @@ func PreparePlaybook(conf *config.Config, tag string, challenge *challenge.Chall
 
 	// SSH args with unique control path per playbook run to prevent shared socket issues
 	// Add connection timeout (30s) and ServerAliveInterval to detect dead connections
-	uniqueID := generateRandomID()
-	sshArgs := "-o ControlMaster=auto -o ControlPersist=30s -o ControlPath=/tmp/ansible-ssh-%%h-%%p-%%r-" + uniqueID +
-		" -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
+	sshArgs := SSHArgs(generateRandomID())
 
 	defaultExecutor := execute.NewDefaultExecute(
 		execute.WithCmd(pbCmd),

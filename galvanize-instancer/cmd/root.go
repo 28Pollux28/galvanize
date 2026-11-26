@@ -25,9 +25,14 @@ func SetVersion(version string) {
 
 var cfgFile string
 
+// The changes of the config file are applied once it has not changed for
+// reloadDelay: a copy writes it in several steps, and only the last one
+// must be read.
+const reloadDelay = 500 * time.Millisecond
+
 var (
-	lastReload time.Time
-	reloadMu   sync.Mutex
+	reloadTimer *time.Timer
+	reloadMu    sync.Mutex
 )
 
 func Execute() {
@@ -52,7 +57,7 @@ func initConfig() {
 	viper.SetConfigFile(cfgFile)
 	viper.SetConfigType("yaml")
 
-	setConfigDefaults()
+	setConfigDefaults(viper.GetViper())
 
 	if err := viper.ReadInConfig(); err != nil {
 		zap.S().Fatalf("Error reading config file: %v", err)
@@ -69,24 +74,35 @@ func initConfig() {
 }
 
 // setConfigDefaults sets the defaults of the settings a config may omit.
-func setConfigDefaults() {
-	viper.SetDefault("instancer.deployment_ttl", "1h")
-	viper.SetDefault("instancer.deployment_ttl_extension", "30m")
-	viper.SetDefault("instancer.deployment_max_extensions", 3)
-	viper.SetDefault("instancer.deployment_extension_window", "30m")
+func setConfigDefaults(v *viper.Viper) {
+	v.SetDefault("instancer.deployment_ttl", "1h")
+	v.SetDefault("instancer.deployment_ttl_extension", "30m")
+	v.SetDefault("instancer.deployment_max_extensions", 3)
+	v.SetDefault("instancer.deployment_extension_window", "30m")
 }
 
 func handleConfigChange(filename string) {
 	reloadMu.Lock()
 	defer reloadMu.Unlock()
-
-	if time.Since(lastReload) < 500*time.Millisecond {
-		return // ignore duplicate events
+	if reloadTimer != nil {
+		reloadTimer.Stop()
 	}
-	lastReload = time.Now()
-	zap.S().Infof("Config file %s changed", filename)
+	reloadTimer = time.AfterFunc(reloadDelay, func() { reloadConfig(filename) })
+}
 
-	if err := config.Reload(); err != nil {
+// reloadConfig reads the config file again, in a viper of its own: the
+// global one is read by viper's watcher, possibly in the middle of a write.
+func reloadConfig(filename string) {
+	zap.S().Infof("Config file %s changed", filename)
+	v := viper.New()
+	v.SetConfigFile(cfgFile)
+	v.SetConfigType("yaml")
+	setConfigDefaults(v)
+	if err := v.ReadInConfig(); err != nil {
+		zap.S().Errorf("Error reading the changed config, the current one is kept: %v", err)
+		return
+	}
+	if err := config.Reload(v); err != nil {
 		zap.S().Errorf("Error reloading config: %v", err)
 		return
 	}

@@ -1,0 +1,33 @@
+---
+# Internal playbook of Galvanize (embedded in the binary): builds one
+# challenge's images on every host. Galvanize sends the challenge folder as
+# an archive and the docker build / docker compose build command line.
+# GALVANIZE_RUN_ID marks the processes of the run, and the build directory
+# has it in its name: a cancelled run is stopped on the hosts by the stop
+# playbook.
+- hosts: all
+  gather_facts: false
+  environment:
+    GALVANIZE_RUN_ID: "{{ galvanize_run_id }}"
+  tasks:
+    - name: Create build directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: "galvanize-build-{{ galvanize_run_id }}-"
+      register: galvanize_build_dir
+
+    - block:
+        - name: Upload build context
+          ansible.builtin.unarchive:
+            src: "{{ build_archive }}"
+            dest: "{{ galvanize_build_dir.path }}"
+
+        - name: Build
+          ansible.builtin.command:
+            argv: "{{ build_argv }}"
+            chdir: "{{ galvanize_build_dir.path }}/{{ build_workdir }}"
+      always:
+        - name: Remove build directory
+          ansible.builtin.file:
+            path: "{{ galvanize_build_dir.path }}"
+            state: absent

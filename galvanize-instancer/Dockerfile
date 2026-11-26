@@ -16,9 +16,11 @@ LABEL authors="28Pollux28"
 
 RUN useradd -ms /bin/bash galvanize
 
-# Install curl to allow health checks, ansible, and tini for zombie process reaping
-RUN apt-get update && apt-get install -y curl pipx ssh-client tini \
+# Install curl to allow health checks, ansible, tini for zombie process
+# reaping, and git with Git LFS for the challenge repositories (admin API)
+RUN apt-get update && apt-get install -y curl git git-lfs pipx ssh-client tini \
     && rm -rf /var/lib/apt/lists/* \
+    && git lfs install --system --skip-repo \
     && pipx ensurepath --global \
     && pipx install --include-deps --global ansible \
     && ansible-galaxy collection install community.docker -p /usr/share/ansible/collections

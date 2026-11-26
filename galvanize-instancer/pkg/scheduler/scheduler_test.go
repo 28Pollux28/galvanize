@@ -53,6 +53,7 @@ func (m *mockIndexer) GetAllUnique() []*challenge.Challenge  { return nil }
 func (m *mockIndexer) GetAll() []*challenge.Challenge        { return nil }
 func (m *mockIndexer) BuildIndex(string) error               { return nil }
 func (m *mockIndexer) Skipped() []challenge.SkippedChallenge { return nil }
+func (m *mockIndexer) Catalog() []*challenge.Challenge       { return nil }
 func (m *mockIndexer) add(c *challenge.Challenge) *mockIndexer {
 	m.challs[c.Category+"/"+c.Name] = c
 	return m

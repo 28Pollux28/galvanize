@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/28Pollux28/galvanize/internal/ansible"
 	"github.com/28Pollux28/galvanize/pkg/config"
@@ -80,4 +81,12 @@ func TestConfigureQueueless_WithRedis(t *testing.T) {
 	got := configureQueueless(&config.Config{}, &worker.Queue{}, sched, nil, nil)
 	assert.Nil(t, got, "the server keeps its default deployer")
 	assert.Nil(t, sched.DirectTerminationDeployer(), "expiries go to the queue")
+}
+
+func TestShutdownLeavesTimeToStopTheRuns(t *testing.T) {
+	// Stopping a cancelled build or image action (ansible-playbook, then the
+	// stop playbook on the hosts) must end before Docker kills Galvanize
+	// (stop_grace_period: 1m), or the hosts are not cleaned
+	assert.Less(t, ansible.StopDuration(), shutdownTimeout)
+	assert.LessOrEqual(t, shutdownTimeout, time.Minute, "the compose files' stop_grace_period")
 }

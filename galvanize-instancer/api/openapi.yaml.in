@@ -393,6 +393,400 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /admin/repos:
+    get:
+      summary: List challenge repositories (admin only)
+      description: >-
+        Like every repository, build, image, challenge-file and operation endpoint,
+        this needs an admin token whose scope claim is "manage" (issued by the CTF
+        platform's server for its own calls, never handed to browsers).
+        Every top-level folder of challenge_dir, with its git state, and the URL prefixes clones are allowed from.
+      operationId: listRepositories
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: Repositories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryList'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Clone a challenge repository (admin only)
+      description: Starts an operation that clones the repository into challenge_dir, then reloads the challenge index. The URL must start with one of repositories.sources.
+      operationId: cloneRepository
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloneRepositoryRequest'
+      responses:
+        '202':
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required, or URL not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Another operation is running, or the repository exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/repos/{name}/pull:
+    post:
+      summary: Update a challenge repository (admin only)
+      description: Starts an operation that fetches the branch or tag the repository follows and resets the folder to it (local changes are discarded), then reloads the challenge index. It builds no image (see /admin/build).
+      operationId: pullRepository
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Another operation is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/repos/{name}:
+    delete:
+      summary: Remove a challenge repository (admin only)
+      description: Starts an operation that deletes the repository folder, then reloads the challenge index. Refused while instances of its challenges exist.
+      operationId: removeRepository
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Another operation is running, or instances of its challenges exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/challenges:
+    get:
+      summary: List challenge definitions (admin only)
+      description: Every challenge definition file of the challenge index, whatever its type, with its full content (flags included), the files it declares, its repository's commit and what building it means.
+      operationId: listChallengeDefinitions
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          description: Only the challenges of this repository
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Challenge definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeDefinitionList'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/challenges/file:
+    get:
+      summary: Download a file of a challenge (admin only)
+      description: A file inside the folder of a challenge of the index (e.g. the path of a declared file, see ChallengeFile). Paths into .git folders, or leading outside the challenge folder, are refused.
+      operationId: getChallengeFile
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: Path relative to challenge_dir
+          schema:
+            type: string
+        - name: checksum
+          in: query
+          required: false
+          description: Return the file's SHA-1 and size (JSON) instead of its content
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: File content, or its checksum
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileChecksum'
+        '400':
+          description: Invalid path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/build:
+    post:
+      summary: Build challenge images (admin only)
+      description: >-
+        Starts an operation that builds the challenges' images with Docker on every Ansible host.
+        Its result lists the definition paths (relative to challenge_dir) built, failed (refused
+        builds included) and skipped (nothing to build).
+      operationId: buildChallenges
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuildRequest'
+      responses:
+        '202':
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '409':
+          description: Another operation is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/images:
+    post:
+      summary: Check or remove challenge images (admin only)
+      description: >-
+        Starts an operation that checks (status) or removes (remove) the challenges' images on every
+        Ansible host. Pulled images are never removed. Its result maps each image to its state per
+        host (images), and each definition path to its images (challenges). States: present or
+        absent (status); removed, absent or failed (remove: the image is still there); unreachable
+        (the host did not answer) or error (the task failed on the host) for every image of a host
+        the check did not run on.
+      operationId: manageImages
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImagesRequest'
+      responses:
+        '202':
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '409':
+          description: Another operation is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/operations:
+    get:
+      summary: List recent operations (admin only)
+      description: The most recent repository, build and image operations, without their log.
+      operationId: listOperations
+      security:
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: Operations, the most recent first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Operation'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+
+  /admin/operations/{id}:
+    get:
+      summary: Get an operation and its log (admin only)
+      operationId: getOperation
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: offset
+          in: query
+          required: false
+          description: Return the log lines from this index on
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '404':
+          description: Operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/operations/{id}/cancel:
+    post:
+      summary: Cancel a running operation (admin only)
+      operationId: cancelOperation
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Cancellation requested
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin token with the "manage" scope required
+        '404':
+          description: Operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The operation already finished
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -596,6 +990,292 @@ components:
       required:
         - indexed
         - skipped
+
+    Repository:
+      type: object
+      properties:
+        name:
+          type: string
+        is_git:
+          type: boolean
+        remote:
+          type: string
+          description: Remote URL, without credentials
+        branch:
+          type: string
+          description: Current branch, empty when HEAD is detached (tag)
+        ref:
+          type: string
+          description: Branch or tag the repository follows on update
+        commit:
+          type: string
+        commit_message:
+          type: string
+        commit_time:
+          type: string
+          format: date-time
+        dirty:
+          type: boolean
+          description: Tracked files differ from the commit
+        challenges:
+          type: integer
+          description: Challenge definitions in the folder
+        error:
+          type: string
+      required:
+        - name
+        - is_git
+        - challenges
+
+    RepositoryList:
+      type: object
+      properties:
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Repository'
+        clone_sources:
+          type: array
+          description: URL prefixes clones are allowed from (empty means cloning is disabled)
+          items:
+            type: string
+      required:
+        - repositories
+        - clone_sources
+
+    CloneRepositoryRequest:
+      type: object
+      properties:
+        url:
+          type: string
+        name:
+          type: string
+          description: Folder name (default from the URL)
+        ref:
+          type: string
+          description: Branch or tag (default branch of the remote)
+        force:
+          type: boolean
+          description: Replace an existing folder of that name
+      required:
+        - url
+
+    ChallengeRef:
+      type: object
+      description: A deployable challenge, by definition file (path) or by category and name
+      properties:
+        path:
+          type: string
+          description: Definition file, relative to challenge_dir (as ChallengeDefinition.path)
+        category:
+          type: string
+        name:
+          type: string
+
+    BuildRequest:
+      type: object
+      description: The challenges to work on, by repository or by name (both may be given; neither means every challenge)
+      properties:
+        repo:
+          type: string
+        challenges:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChallengeRef'
+        no_cache:
+          type: boolean
+
+    ImagesRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [ status, remove ]
+        repo:
+          type: string
+        challenges:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChallengeRef'
+      required:
+        - action
+
+    BuildPlan:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [ image, compose, none ]
+        reason:
+          type: string
+          description: Why there is nothing to build, or why the build is refused
+        refused:
+          type: boolean
+          description: >-
+            There is something to build, but the challenge may not build it (unsafe
+            build section, invalid name, image used by another challenge folder or
+            by the platform, compose file and deployment disagreeing on an image)
+        images:
+          type: array
+          items:
+            type: string
+        buildable:
+          type: boolean
+          description: A build of this challenge builds something (it is deployable, and kind is image or compose)
+      required:
+        - kind
+        - images
+        - buildable
+
+    ChallengeFile:
+      type: object
+      description: >-
+        A file of the definition's files list, looked up in the challenge folder, then in its files/
+        subfolder. Absolute paths, paths leaving the challenge folder (symlinks included) or going
+        through .git, and Git LFS pointers are errors.
+      properties:
+        declared:
+          type: string
+          description: The path as written in the definition
+        path:
+          type: string
+          description: The file found, relative to challenge_dir (to download with /admin/challenges/file)
+        size:
+          type: integer
+          format: int64
+        error:
+          type: string
+          description: Why the file cannot be served
+      required:
+        - declared
+
+    ChallengeDefinition:
+      type: object
+      properties:
+        category:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        playbook_name:
+          type: string
+        repository:
+          type: string
+          description: Repository folder, empty for a challenge directly in challenge_dir
+        path:
+          type: string
+          description: Definition file, relative to challenge_dir
+        dir:
+          type: string
+          description: Challenge folder, relative to challenge_dir
+        deployable:
+          type: boolean
+          description: The challenge can be deployed (type zync, in the deployment index)
+        build:
+          $ref: '#/components/schemas/BuildPlan'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChallengeFile'
+        commit:
+          type: string
+          description: Current commit of the repository (abbreviated), when it is a git clone
+        definition:
+          type: object
+          additionalProperties: true
+          description: The whole definition file as parsed
+      required:
+        - category
+        - name
+        - type
+        - repository
+        - path
+        - dir
+        - deployable
+        - build
+        - files
+        - definition
+
+    ChallengeDefinitionList:
+      type: object
+      properties:
+        challenges:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChallengeDefinition'
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkippedChallenge'
+      required:
+        - challenges
+        - skipped
+
+    OperationLine:
+      type: object
+      properties:
+        time:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [ debug, info, success, warning, error ]
+        message:
+          type: string
+      required:
+        - time
+        - level
+        - message
+
+    Operation:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [ clone, pull, remove, build, images ]
+        target:
+          type: string
+        status:
+          type: string
+          enum: [ running, success, warning, failed, cancelled ]
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        result:
+          type: object
+          additionalProperties: true
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationLine'
+        line_count:
+          type: integer
+      required:
+        - id
+        - kind
+        - target
+        - status
+        - created_at
+        - lines
+        - line_count
+
+    FileChecksum:
+      type: object
+      properties:
+        sha1:
+          type: string
+        size:
+          type: integer
+          format: int64
+      required:
+        - sha1
+        - size
 
     SkippedChallenge:
       type: object

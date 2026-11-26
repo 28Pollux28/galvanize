@@ -31,6 +31,24 @@ instancer:
     cpus: "1"             # CPU limit per container (e.g. "0.5", "1", "2")
     memory: "512M"        # Memory limit per container (e.g. "256M", "512M", "1G")
     pids_limit: 256       # Max number of PIDs per container (fork bomb protection)
+  repositories: # Challenge repositories managed through the admin API (/admin/repos)
+    # Clones are allowed only from URLs inside one of these prefixes (same
+    # scheme, host and port, path below the prefix's folder; the prefix must
+    # end with "/"). With no source, cloning is disabled (repositories already
+    # in challenge_dir can still be listed, updated and removed).
+    sources:
+      - url_prefix: "https://github.com/your-org/"
+        # token: ""                # optional, https only, for private repositories (read-only token); never written to the clone
+        # username: "x-access-token" # HTTP user sent with the token (default: x-access-token)
+    git_timeout: "10m" # Time limit of one git command (default: 10m)
+  build: # Image builds (/admin/build), run with Docker on every Ansible host
+    concurrency: 2 # Challenges built at the same time (default: 2)
+    timeout: "30m" # Time limit of one challenge build (default: 30m)
+    # Images challenges may never build (repository, any tag; or a prefix
+    # ending with "/"). Unset: traefik, mariadb, mysql, redis, postgres and
+    # ghcr.io/28pollux28/. Setting it replaces the defaults: list them with
+    # your CTF platform's images.
+    # protected_images: ["traefik", "mariadb", "mysql", "redis", "postgres", "ghcr.io/28pollux28/", "ctfd/ctfd"]
   extra_deployment_parameters: # Additional parameters for deployment (added to vars in Ansible)
     # Name of the external Docker network Traefik watches on the target host(s).
     # Required for http challenges and for http exposures in compose challenges.
